@@ -61,6 +61,14 @@ input[type="text"].seventy {
   width: 70%;
 }
 
+input[type="text"].with-errors {
+  border: solid 1px #EE5F5B;
+}
+
+input[type="text"].filechooser-input.with-errors {
+  border-right: none;
+}
+
 .fileChooserBtn {
   height: 31px;
 }

@@ -172,7 +172,7 @@ ${ commonheader(_("Workflow Editor"), "Oozie", user, "40px") | n,unicode }
 
     &nbsp;&nbsp;&nbsp;
 
-    <a title="${ _('Save') }" rel="tooltip" data-placement="bottom" data-loading-text="${ _("Saving...") }" data-bind="click: $root.save, css: {'btn': true}, visible: canEdit">
+    <a title="${ _('Save') }" rel="tooltip" data-placement="bottom" data-loading-text="${ _("Saving...") }" data-bind="click: validateAndSave, css: {'btn': true}, visible: canEdit">
       <i class="fa fa-fw fa-save"></i>
     </a>
 
@@ -1380,7 +1380,7 @@ ${ commonheader(_("Workflow Editor"), "Oozie", user, "40px") | n,unicode }
         </h6>
         <ul data-bind="foreach: properties.deletes" class="unstyled">
           <li>
-            <input type="text" class="input-xlarge filechooser-input" data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, value: value, attr: { placeholder: $root.workflow_properties.deletes.help_text }"/>
+            <input type="text" class="input-xlarge filechooser-input" data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, value: value, attr: { placeholder: $root.workflow_properties.deletes.help_text }" required="true"/>
             <span data-bind='template: { name: "common-fs-link", data: {path: value(), with_label: false} }, visible: value().length > 0'></span>
             <a href="#" data-bind="click: function(){ $parent.properties.deletes.remove(this); }">
               <i class="fa fa-minus"></i>
@@ -1897,6 +1897,20 @@ ${ dashboard.import_bindings() }
       label: '${ _('Workspace') }',
       icon: 'fa-folder-open',
       path: viewModel.workflow.properties.deployment_dir()
+    }
+  }
+
+  function validateAndSave() {
+    var _hasErrors = false;
+    $("[required='true']").each(function(){
+      if ($.trim($(this).val()) == ""){
+        $(this).addClass("with-errors");
+        $(this).next().addClass("btn-danger");
+        _hasErrors = true;
+      }
+    });
+    if (! _hasErrors){
+      viewModel.save();
     }
   }
 
