@@ -42,9 +42,9 @@
         '<div id="tooltip" class="tooltip"><div class="tooltip-arrow"></div><input type="text" class="tooltip-inner" /></div>' +
         '<div id="tooltip_start" class="tooltip"><div class="tooltip-arrow"></div><input type="text" class="tooltip-inner" /></div>' +
         '<div id="tooltip_end" class="tooltip"><div class="tooltip-arrow"></div><input type="text" class="tooltip-inner" /></div>' +
-        '<div id="tooltip_min" class="tooltip"><div class="tooltip-arrow"></div><input type="text" class="tooltip-inner" /></div>' +
-        '<div id="tooltip_max" class="tooltip"><div class="tooltip-arrow"></div><input type="text" class="tooltip-inner" /></div>' +
-        '<div id="tooltip_step" class="tooltip"><input type="text" class="tooltip-inner" style="border-width: 2px!important" /></div>' +
+        '<div id="tooltip_min" class="tooltip"><div class="tooltip-arrow"></div><input type="text" class="tooltip-inner readonly" /></div>' +
+        '<div id="tooltip_max" class="tooltip"><div class="tooltip-arrow"></div><input type="text" class="tooltip-inner readonly" /></div>' +
+        '<div id="tooltip_step" class="tooltip"><div style="text-align: center;height: 11px;"><i class="fa fa-arrows-h"></i></div><input type="text" class="tooltip-inner" title="' + options.labels.STEP + '" /></div>' +
         '</div>')
         .insertBefore(this.element)
         .append(this.element);
@@ -102,7 +102,7 @@
     this.tooltip_end.addClass("top")[0].style.top = "-30px";
     this.tooltip_min.addClass("top")[0].style.top = "18px";
     this.tooltip_max.addClass("top")[0].style.top = "18px";
-    this.tooltip_step.addClass("top")[0].style.top = "18px";
+    this.tooltip_step.addClass("top")[0].style.top = "6px";
 
     this.tooltipInner_start.on({
       blur: $.proxy(this.blur, this, 0),
@@ -894,6 +894,9 @@
     },
     reverseStepFormatter: function (value) {
       return value*1;
+    },
+    labels: {
+      STEP: "Increment"
     }
   };
 
