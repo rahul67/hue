@@ -287,3 +287,7 @@ ul.unstyled li {
 .widget-running {
   opacity: .5;
 }
+
+ul.airy li {
+  margin-bottom: 3px;
+}
