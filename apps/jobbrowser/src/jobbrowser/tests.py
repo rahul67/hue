@@ -84,6 +84,8 @@ class TestJobBrowserWithHadoop(unittest.TestCase, OozieServerProvider):
   @classmethod
   def setup_class(cls):
     OozieServerProvider.setup_class()
+    
+    raise SkipTest
 
   def setUp(self):
     """
