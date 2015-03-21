@@ -84,8 +84,6 @@ class TestJobBrowserWithHadoop(unittest.TestCase, OozieServerProvider):
   @classmethod
   def setup_class(cls):
     OozieServerProvider.setup_class()
-    
-    raise SkipTest
 
   def setUp(self):
     """
@@ -108,6 +106,8 @@ class TestJobBrowserWithHadoop(unittest.TestCase, OozieServerProvider):
 
     self.install_examples()
     self.design = self.create_design()
+
+    raise SkipTest
 
     # Run the sleep example, since it doesn't require user home directory
     design_id = self.design.id

@@ -260,8 +260,7 @@ test: java-test
 	DESKTOP_DEBUG=1 $(ENV_PYTHON) $(BLD_DIR_BIN)/hue test fast --with-xunit
 
 test-slow: java-test
-	#DESKTOP_DEBUG=1 $(ENV_PYTHON) $(BLD_DIR_BIN)/hue test all --with-xunit --with-cover
-	DESKTOP_DEBUG=1 $(ENV_PYTHON) $(BLD_DIR_BIN)/hue test specific jobbrowser.tests:TestJobBrowserWithHadoop
+	DESKTOP_DEBUG=1 $(ENV_PYTHON) $(BLD_DIR_BIN)/hue test all --with-xunit --with-cover
 	$(BLD_DIR_BIN)/coverage xml
 
 start-dev:
