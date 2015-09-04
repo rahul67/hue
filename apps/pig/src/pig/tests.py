@@ -22,11 +22,13 @@ import time
 from django.contrib.auth.models import User
 from django.core.urlresolvers import reverse
 
+from nose.plugins.skip import SkipTest
 from nose.tools import assert_true, assert_equal, assert_false
 
 from desktop.lib.django_test_util import make_logged_in_client
 from desktop.lib.test_utils import grant_access
 from hadoop import pseudo_hdfs4
+from hadoop.pseudo_hdfs4 import is_live_cluster
 from liboozie.oozie_api_tests import OozieServerProvider
 from oozie.tests import OozieBase
 
@@ -59,67 +61,6 @@ def create_script(user, xattrs=None):
   if xattrs is not None:
     attrs.update(xattrs)
   return create_or_update_script(**attrs)
-
-def test_make_log_links():
-  # FileBrowser
-  assert_equal(
-      """<a href="/filebrowser/view/user/romain/tmp" target="_blank">hdfs://localhost:8020/user/romain/tmp</a>  &lt;dir&gt;""",
-      OozieApi._make_links('hdfs://localhost:8020/user/romain/tmp  <dir>')
-  )
-  assert_equal(
-      """<a href="/filebrowser/view/user/romain/tmp" target="_blank">hdfs://localhost:8020/user/romain/tmp</a>&lt;dir&gt;""",
-      OozieApi._make_links('hdfs://localhost:8020/user/romain/tmp<dir>')
-  )
-  assert_equal(
-      """output: <a href="/filebrowser/view/user/romain/tmp" target="_blank">/user/romain/tmp</a>  &lt;dir&gt;""",
-      OozieApi._make_links('output: /user/romain/tmp  <dir>')
-  )
-  assert_equal(
-      'Successfully read 3760 records (112648 bytes) from: &quot;<a href="/filebrowser/view/user/hue/pig/examples/data/midsummer.txt" target="_blank">/user/hue/pig/examples/data/midsummer.txt</a>&quot;',
-      OozieApi._make_links('Successfully read 3760 records (112648 bytes) from: "/user/hue/pig/examples/data/midsummer.txt"')
-  )
-  assert_equal(
-      'data,upper_case  MAP_ONLY  <a href="/filebrowser/view/user/romain/out/fffff" target="_blank">hdfs://localhost:8020/user/romain/out/fffff</a>,',
-      OozieApi._make_links('data,upper_case  MAP_ONLY  hdfs://localhost:8020/user/romain/out/fffff,')
-  )
-  assert_equal(
-      'MAP_ONLY  <a href="/filebrowser/view/user/romain/out/fffff" target="_blank">hdfs://localhost:8020/user/romain/out/fffff</a>\n2013',
-      OozieApi._make_links('MAP_ONLY  hdfs://localhost:8020/user/romain/out/fffff\n2013')
-  )
-  assert_equal(
-      ' <a href="/filebrowser/view/jobs.tsv" target="_blank">/jobs.tsv</a> ',
-      OozieApi._make_links(' /jobs.tsv ')
-  )
-  assert_equal(
-      '<a href="/filebrowser/view/user/romain/job_pos_2012.tsv" target="_blank">hdfs://localhost:8020/user/romain/job_pos_2012.tsv</a>',
-      OozieApi._make_links('hdfs://localhost:8020/user/romain/job_pos_2012.tsv')
-  )
-
-  # JobBrowser
-  assert_equal(
-      """<a href="/jobbrowser/jobs/job_201306261521_0058" target="_blank">job_201306261521_0058</a>""",
-      OozieApi._make_links('job_201306261521_0058')
-  )
-  assert_equal(
-      """Hadoop Job IDs executed by Pig: <a href="/jobbrowser/jobs/job_201306261521_0058" target="_blank">job_201306261521_0058</a>""",
-      OozieApi._make_links('Hadoop Job IDs executed by Pig: job_201306261521_0058')
-  )
-  assert_equal(
-      """MapReduceLauncher  - HadoopJobId: <a href="/jobbrowser/jobs/job_201306261521_0058" target="_blank">job_201306261521_0058</a>""",
-      OozieApi._make_links('MapReduceLauncher  - HadoopJobId: job_201306261521_0058')
-  )
-  assert_equal(
-      """- More information at: http://localhost:50030/jobdetails.jsp?jobid=<a href="/jobbrowser/jobs/job_201306261521_0058" target="_blank">job_201306261521_0058</a>""",
-      OozieApi._make_links('- More information at: http://localhost:50030/jobdetails.jsp?jobid=job_201306261521_0058')
-  )
-  assert_equal(
-      """ Logging error messages to: job_201307091553_0028/attempt_201307091553_002""",
-      OozieApi._make_links(' Logging error messages to: job_201307091553_0028/attempt_201307091553_002')
-  )
-  assert_equal(
-      """ pig-job_201307091553_0028.log""",
-      OozieApi._make_links(' pig-job_201307091553_0028.log')
-  )
 
 
 class TestMock(TestPigBase):
@@ -199,13 +140,13 @@ class TestWithHadoop(OozieBase):
     self.user = User.objects.get(username='test')
     self.c.post(reverse('pig:install_examples'))
 
-  def test_create_workflow(self):
-    cluster = pseudo_hdfs4.shared_cluster()
-    api = OozieApi(cluster.fs, cluster.jt, self.user)
+    self.cluster = pseudo_hdfs4.shared_cluster()
+    self.api = OozieApi(self.cluster.fs, self.cluster.jt, self.user)
 
+  def test_create_workflow(self):
     xattrs = {
       'parameters': [
-        {'name': 'output', 'value': '/tmp'},
+        {'name': 'output', 'value': self.cluster.fs_prefix + '/test_pig_script_workflow'},
         {'name': '-param', 'value': 'input=/data'}, # Alternative way for params
         {'name': '-optimizer_off', 'value': 'SplitFilter'},
         {'name': '-v', 'value': ''},
@@ -221,15 +162,17 @@ class TestWithHadoop(OozieBase):
     }
 
     pig_script = create_script(self.user, xattrs)
+
+    output_path = self.cluster.fs_prefix + '/test_pig_script_2'
     params = json.dumps([
-      {'name': 'output', 'value': '/tmp2'},
+      {'name': 'output', 'value': output_path},
     ])
 
-    workflow = api._create_workflow(pig_script, params)
+    workflow = self.api._create_workflow(pig_script, params)
     pig_action = workflow.start.get_child('to').get_full_node()
 
     assert_equal([
-        {u'type': u'argument', u'value': u'-param'}, {u'type': u'argument', u'value': u'output=/tmp2'},
+        {u'type': u'argument', u'value': u'-param'}, {u'type': u'argument', u'value': u'output=%s' % output_path},
         {u'type': u'argument', u'value': u'-param'}, {u'type': u'argument', u'value': u'input=/data'},
         {u'type': u'argument', u'value': u'-optimizer_off'}, {u'type': u'argument', u'value': u'SplitFilter'},
         {u'type': u'argument', u'value': u'-v'},
@@ -264,11 +207,17 @@ class TestWithHadoop(OozieBase):
 
     if response['workflow']['status'] != expected_status:
       msg = "[%d] %s took more than %d to complete or %s: %s" % (time.time(), job_id, timeout, response['workflow']['status'], logs)
+
+      self.api.stop(job_id)
+
       raise Exception(msg)
 
     return pig_script_id
 
   def test_submit(self):
+    if is_live_cluster():
+      raise SkipTest('HUE-2909: Skipping because test is not reentrant')
+
     script = PigScript.objects.get(id=1100713)
     script_dict = script.dict
 
@@ -280,7 +229,7 @@ class TestWithHadoop(OozieBase):
       'parameters': json.dumps(script_dict['parameters']),
       'resources': json.dumps(script_dict['resources']),
       'hadoopProperties': json.dumps(script_dict['hadoopProperties']),
-      'submissionVariables': json.dumps([{"name": "output", "value": '/tmp/test_pig'}]),
+      'submissionVariables': json.dumps([{"name": "output", "value": self.cluster.fs_prefix + '/test_pig_script_submit'}]),
     }
 
     response = self.c.post(reverse('pig:run'), data=post_data, follow=True)
@@ -300,7 +249,7 @@ class TestWithHadoop(OozieBase):
       'parameters': json.dumps(script_dict['parameters']),
       'resources': json.dumps(script_dict['resources']),
       'hadoopProperties': json.dumps(script_dict['hadoopProperties']),
-      'submissionVariables': json.dumps([{"name": "output", "value": '/tmp/test_pig'}]),
+      'submissionVariables': json.dumps([{"name": "output", "value": self.cluster.fs_prefix + '/test_pig_script_stop'}]),
     }
 
     submit_response = self.c.post(reverse('pig:run'), data=post_data, follow=True)

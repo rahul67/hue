@@ -18,20 +18,20 @@
 import logging
 import os
 
-from pytz import timezone, datetime
-
+from pytz import UnknownTimeZoneError, datetime, timezone
 
 class Formatter(logging.Formatter):
   def formatTime(self, record, datefmt=None):
     try:
       tz = timezone(os.environ['TZ'])
+    except (KeyError, UnknownTimeZoneError):
+      tz = None
+
+    try:
       ct = datetime.datetime.fromtimestamp(record.created, tz=tz)
-    except:
-      try:
-        ct = datetime.datetime.fromtimestamp(record.created)
-      except:
-        # Fallback to original.
-        return super(Formatter, self).formatTime(record, datefmt=datefmt)
+    except (OverflowError, TypeError, ValueError):
+      # Fallback to original.
+      return super(Formatter, self).formatTime(record, datefmt=datefmt)
 
     if datefmt:
       s = ct.strftime(datefmt)

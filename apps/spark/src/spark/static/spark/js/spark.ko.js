@@ -15,13 +15,18 @@
 // limitations under the License.
 
 
+var SPARK_MAPPING = {
+  ignore: ["ace", "images"]
+}
+
 var Result = function (snippet, result) {
   var self = this;
 
   self.id = ko.observable(typeof result.id != "undefined" && result.id != null ? result.id : UUID());
   self.type = ko.observable(typeof result.type != "undefined" && result.type != null ? result.type : 'table');
-  self.hasResultset = ko.observable(typeof result.hasResultset != "undefined" && result.hasResultset != null ? result.hasResultset : true);
-  self.handle = ko.observable({});
+  self.hasResultset = ko.observable(typeof result.hasResultset != "undefined" && result.hasResultset != null ? result.hasResultset : true)
+    .extend("throttle", 100);
+  self.handle = ko.observable(typeof result.handle != "undefined" && result.handle != null ? result.handle : {});
   self.meta = ko.observableArray(typeof result.meta != "undefined" && result.meta != null ? result.meta : []);
   self.cleanedMeta = ko.computed(function () {
     return ko.utils.arrayFilter(self.meta(), function (item) {
@@ -67,8 +72,10 @@ var Result = function (snippet, result) {
 
   self.data = ko.observableArray(typeof result.data != "undefined" && result.data != null ? result.data : []);
   self.data.extend({ rateLimit: 50 });
+  self.images = ko.observableArray(typeof result.images != "undefined" && result.images != null ? result.images : []);
+  self.images.extend({ rateLimit: 50 });
   self.logs = ko.observable('');
-  self.errors = ko.observable('');
+  self.logLines = 0;
   self.hasSomeResults = ko.computed(function () {
     return self.hasResultset() && self.data().length > 0; // status() == 'available'
   });
@@ -79,34 +86,61 @@ var Result = function (snippet, result) {
         type: self.type,
         handle: self.handle
     };
-  }
-  
-  if (typeof result.handle != "undefined" && result.handle != null) {
-    $.each(result.handle, function (key, val) {
-      self.handle()[key] = val;
-    });
-  }
+  };
 
   self.clear = function () {
-    $.each(self.handle, function (key, val) {
-      delete self.handle()[key];
-    });
     self.fetchedOnce(false);
     self.data.removeAll();
+    self.images.removeAll();
     self.logs('');
-    self.errors('');
     self.startTime(new Date());
     self.endTime(new Date());
   };
-}
+};
 
-var TYPE_EDITOR_MAP = {
-  'hive': 'text/x-hiveql',
-  'impala': 'text/x-impalaql',
-  'python': 'text/x-python',
-  'scala': 'text/x-scala',
-  'pig': 'text/x-pig'
-}
+var TYPE_ACE_EDITOR_MAP = {
+  'hive': 'ace/mode/hive',
+  'impala': 'ace/mode/impala',
+  'pyspark': 'ace/mode/python',
+  'spark': 'ace/mode/scala',
+  'pig': 'ace/mode/pig',
+  'r': 'ace/mode/r'
+};
+
+var getDefaultSnippetProperties = function (snippetType) {
+  var properties = {};
+
+  if (snippetType == 'jar' || snippetType == 'py') {
+    properties['driverCores'] = '';
+    properties['executorCores'] = '';
+    properties['numExecutors'] = '';
+    properties['queue'] = '';
+    properties['archives'] = [];
+  }
+
+  if (snippetType == 'jar') {
+    properties['app_jar'] = '';
+    properties['class'] = '';
+    properties['arguments'] = [];
+  }
+  else if (snippetType == 'py') {
+    properties['py_file'] = '';
+    properties['arguments'] = [];
+  }
+  else if (snippetType == 'hive') {
+    properties['settings'] = [];
+    properties['files'] = [];
+  }
+  else if (snippetType == 'pig') {
+    properties['parameters'] = [];
+    properties['hadoop_properties'] = [];
+    properties['files'] = [];
+  }
+
+  return properties;
+};
+
+var ERROR_REGEX = /line ([0-9]+)/i;
 
 var Snippet = function (vm, notebook, snippet) {
   var self = this;
@@ -114,21 +148,44 @@ var Snippet = function (vm, notebook, snippet) {
   self.id = ko.observable(typeof snippet.id != "undefined" && snippet.id != null ? snippet.id : UUID());
   self.name = ko.observable(typeof snippet.name != "undefined" && snippet.name != null ? snippet.name : '');
   self.type = ko.observable(typeof snippet.type != "undefined" && snippet.type != null ? snippet.type : "hive");
-  self.editorMode = ko.observable(TYPE_EDITOR_MAP[self.type()]);
-  self.statement_raw = ko.observable(typeof snippet.statement_raw != "undefined" && snippet.statement_raw != null ? snippet.statement_raw : vm.snippetPlaceholders[self.type()]);
+
+  //Ace stuff
+  self.aceEditorMode = ko.observable(TYPE_ACE_EDITOR_MAP[self.type()]);
+  self.ace = ko.observable(null);
+  self.completers = ko.observableArray([]);
+  self.errors = ko.observableArray([]);
+
+  self.statement_raw = ko.observable(typeof snippet.statement_raw != "undefined" && snippet.statement_raw != null ? snippet.statement_raw : '');
   self.codemirrorSize = ko.observable(typeof snippet.codemirrorSize != "undefined" && snippet.codemirrorSize != null ? snippet.codemirrorSize : 100);
   // self.statement_raw.extend({ rateLimit: 150 }); // Should prevent lag from typing but currently send the old query when using the key shortcut
   self.status = ko.observable(typeof snippet.status != "undefined" && snippet.status != null ? snippet.status : 'loading');
-  self.settings = ko.mapping.fromJS(typeof snippet.settings != "undefined" && snippet.settings != null ? snippet.settings : {});
+
+  self.properties = ko.observable(ko.mapping.fromJS(typeof snippet.properties != "undefined" && snippet.properties != null ? snippet.properties : getDefaultSnippetProperties(self.type())));
+  self.hasProperties = ko.computed(function() {
+    return Object.keys(ko.mapping.toJS(self.properties())).length > 0;
+  });
+
+  var previousProperties = {};
+  self.type.subscribe(function(oldValue) {
+    previousProperties[oldValue] = self.properties();
+  }, null, "beforeChange");
+
+  self.type.subscribe(function (newValue) {
+    self.aceEditorMode(TYPE_ACE_EDITOR_MAP[newValue]);
+    if (typeof previousProperties[newValue] != "undefined") {
+      self.properties(previousProperties[newValue]);
+    } else {
+      self.properties(ko.mapping.fromJS(getDefaultSnippetProperties(newValue)));
+    }
+  });
+
   self.variables = ko.observableArray([]);
   self.variableNames = ko.computed(function () {
-    var matches = [];
-    var myRegexp = /(?:[^\\]\$)([^\d'" ]\w*)/g;
-    var match = myRegexp.exec(self.statement_raw());
+    var re = /(?:^|\W)\${(\w+)(?!\w)}/g;
 
-    while (match != null) {
+    var match, matches = [];
+    while (match = re.exec(self.statement_raw())) {
       matches.push(match[1]);
-      match = myRegexp.exec(self.statement());
     }
     return matches;
   });
@@ -170,7 +227,7 @@ var Snippet = function (vm, notebook, snippet) {
   self.statement = ko.computed(function () {
     var statement = self.statement_raw();
     $.each(self.variables(), function (index, variable) {
-      statement = statement.replace(RegExp("([^\\\\])\\$" + variable.name(), "g"), "$1" + variable.value());
+      statement = statement.replace(RegExp("([^\\\\])?\\${" + variable.name() + "}", "g"), "$1" + variable.value());
     });
     return statement;
   });
@@ -193,7 +250,7 @@ var Snippet = function (vm, notebook, snippet) {
   self.showChart.subscribe(function (val) {
     if (val) {
       self.showGrid(false);
-      self.isLeftPanelVisible(true);
+      self.isResultSettingsVisible(true);
       $(document).trigger("forceChartDraw", self);
       $(document).trigger("chartShown", self);
     }
@@ -203,8 +260,6 @@ var Snippet = function (vm, notebook, snippet) {
       self.getLogs();
     }
   });
-  self.size = ko.observable(typeof snippet.size != "undefined" && snippet.size != null ? snippet.size : 12).extend({ numeric: 0 });
-  self.offset = ko.observable(typeof snippet.offset != "undefined" && snippet.offset != null ? snippet.offset : 0).extend({ numeric: 0 });
   self.isLoading = ko.computed(function () {
     return self.status() == "loading";
   });
@@ -212,16 +267,12 @@ var Snippet = function (vm, notebook, snippet) {
     return "snippet card card-widget";
   });
 
-  self.editorKlass = ko.computed(function () {
-    return "editor span" + self.size() + (self.offset() * 1 > 0 ? " offset" + self.offset() : "");
-  });
-
   self.resultsKlass = ko.computed(function () {
     return "results " + self.type();
   });
 
   self.errorsKlass = ko.computed(function () {
-    return self.resultsKlass + " alert alert-error";
+    return self.resultsKlass() + " alert alert-error";
   });
 
   self.chartType = ko.observable(typeof snippet.chartType != "undefined" && snippet.chartType != null ? snippet.chartType : ko.HUE_CHARTS.TYPES.BARCHART);
@@ -234,38 +285,51 @@ var Snippet = function (vm, notebook, snippet) {
   self.chartData = ko.observableArray(typeof snippet.chartData != "undefined" && snippet.chartData != null ? snippet.chartData : []);
   self.chartMapLabel = ko.observable(typeof snippet.chartMapLabel != "undefined" && snippet.chartMapLabel != null ? snippet.chartMapLabel : null);
 
+  self.hasDataForChart = ko.computed(function () {
+    if (self.chartType() == ko.HUE_CHARTS.TYPES.BARCHART || self.chartType() == ko.HUE_CHARTS.TYPES.LINECHART) {
+      return typeof self.chartX() != "undefined" && self.chartX() != null && self.chartYMulti().length > 0;
+    }
+    return typeof self.chartX() != "undefined" && self.chartX() != null && typeof self.chartYSingle() != "undefined" && self.chartYSingle() != null ;
+  });
+
+  self.hasDataForChart.subscribe(function(newValue) {
+    if (!newValue) {
+      self.isResultSettingsVisible(true);
+    }
+    self.chartX.notifySubscribers();
+    self.chartX.valueHasMutated();
+  });
+
   self.chartType.subscribe(function (val) {
     $(document).trigger("forceChartDraw", self);
   });
 
-  self.tempChartOptions = {};
+  self.previousChartOptions = {};
 
-  self.isLeftPanelVisible = ko.observable(typeof snippet.isLeftPanelVisible != "undefined" && snippet.isLeftPanelVisible != null ? snippet.isLeftPanelVisible : false);
-  self.toggleLeftPanel = function () {
-    self.isLeftPanelVisible(!self.isLeftPanelVisible());
-    $(document).trigger("toggleLeftPanel", self);
+  self.result.meta.subscribe(function(newValue) {
+    self.chartX(self.previousChartOptions.chartX);
+    self.chartYSingle(self.previousChartOptions.chartYSingle);
+    self.chartMapLabel(self.previousChartOptions.chartMapLabel);
+    self.chartYMulti(self.previousChartOptions.chartYMulti || []);
+  });
+
+  self.isResultSettingsVisible = ko.observable(typeof snippet.isResultSettingsVisible != "undefined" && snippet.isResultSettingsVisible != null ? snippet.isResultSettingsVisible : false);
+  self.toggleResultSettings = function () {
+    self.isResultSettingsVisible(!self.isResultSettingsVisible());
+    $(document).trigger("toggleResultSettings", self);
   };
 
-  self.expand = function () {
-    self.size(self.size() + 1);
-    $("#snippet_" + self.id()).trigger("resize");
-  }
+  self.codeVisible = ko.observable(typeof snippet.codeVisible != "undefined" && snippet.codeVisible != null ? snippet.codeVisible : true);
+  self.settingsVisible = ko.observable(typeof snippet.settingsVisible != "undefined" && snippet.settingsVisible != null ? snippet.settingsVisible : false);
 
-  self.compress = function () {
-    self.size(self.size() - 1);
-    $("#snippet_" + self.id()).trigger("resize");
-  }
-
-  self.moveLeft = function () {
-    self.offset(self.offset() - 1);
-  }
-
-  self.moveRight = function () {
-    self.offset(self.offset() + 1);
-  }
-
-  self.remove = function (notebook, snippet) {
-    notebook.snippets.remove(snippet);
+  // We need to refresh codemirror the first time it's shown if it's initially hidden otherwise it'll be blank
+  if (!self.codeVisible()) {
+    var subscription = self.codeVisible.subscribe(function(newVal) {
+      if (newVal) {
+        $(document).trigger("refreshCodeMirror", self);
+        subscription.dispose();
+      }
+    });
   }
 
   self.checkStatusTimeout = null;
@@ -276,54 +340,57 @@ var Snippet = function (vm, notebook, snippet) {
       type: self.type,
       status: self.status,
       statement: self.statement,
+      properties: self.properties,
       result: self.result.getContext()
     };
-  }
-  
-  self._ajax_error = function (data, callback) {
-    if (data.status == -2) {
-      self.create_session(callback);
+  };
+
+  self._ajaxError = function (data, callback) {
+    if (data.status == -2 || data.status == -1) {
+      var existingSession = notebook.getSession(self.type());
+      if (existingSession) {
+        notebook.restartSession(existingSession, callback);
+      } else {
+        notebook.createSession(new Session(vm, {'type': self.type()}), callback);
+      }
     }
     else if (data.status == -3) {
       self.status('expired');
     }
     else if (data.status == 1) {
       self.status('failed');
-      self.result.errors(data.message);
+      var match = ERROR_REGEX.exec(data.message);
+      self.errors.push({
+        message: data.message,
+        line: match === null ? null : parseInt(match[1]) - 1
+      });
     } else {
       $(document).trigger("error", data.message);
       self.status('failed');
     }
   };
 
-  self.create_session = function (callback) {
-    self.status('loading');
-    $.post("/spark/api/create_session", {
-      snippet: ko.mapping.toJSON(self.getContext())
-    }, function (data) {
-      if (data.status == 0) {
-        notebook.addSession(ko.mapping.fromJS(data.session));
-        self.status('ready');
-        if (callback) {
-          setTimeout(callback, 500);
-        }
-      }
-      else {
-        self.status('failed');
-        $(document).trigger("error", data.message);
-      }
-    }).fail(function (xhr, textStatus, errorThrown) {
-      $(document).trigger("error", xhr.responseText);
-    });
-  };
+  self.lastExecuted = 0;
 
   self.execute = function () {
+    var now = (new Date()).getTime(); // we don't allow fast clicks
+    if (self.status() == 'running' || self.status() == 'loading' || now - self.lastExecuted < 1000) {
+      return;
+    }
+    self.previousChartOptions = {
+      chartX: typeof self.chartX() !== "undefined" ? self.chartX() : self.previousChartOptions.chartX,
+      chartYSingle: typeof self.chartYSingle() !== "undefined" ? self.chartYSingle() : self.previousChartOptions.chartYSingle,
+      chartMapLabel: typeof self.chartMapLabel() !== "undefined" ? self.chartMapLabel() : self.previousChartOptions.chartMapLabel,
+      chartYMulti: typeof self.chartYMulti() !== "undefined" ? self.chartYMulti() : self.previousChartOptions.chartYMulti
+    };
     $(document).trigger("executeStarted", self);
+    self.lastExecuted = now;
     $(".jHueNotify").hide();
     logGA('/execute/' + self.type());
 
     self.status('running');
-    self.result.clear();
+    self.errors([]);
+    self.result.logLines = 0;
     self.progress(0);
 
     if (self.result.fetchedOnce()) {
@@ -335,14 +402,12 @@ var Snippet = function (vm, notebook, snippet) {
       snippet: ko.mapping.toJSON(self.getContext())
     }, function (data) {
       if (data.status == 0) {
-        $.each(data.handle, function (key, val) {
-          self.result.handle()[key] = val;
-        });
-
+        self.result.clear();
+        self.result.handle(data.handle);
         self.result.hasResultset(data.handle.has_result_set);
         self.checkStatus();
       } else {
-        self._ajax_error(data, self.execute);
+        self._ajaxError(data, self.execute);
       }
     }).fail(function (xhr, textStatus, errorThrown) {
       $(document).trigger("error", xhr.responseText);
@@ -376,6 +441,8 @@ var Snippet = function (vm, notebook, snippet) {
           _tempData.push(row);
         });
 
+        self.result.images(typeof data.result.images != "undefined" && data.result.images != null ? data.result.images : []);
+
         $(document).trigger("renderData", {data: _tempData, snippet: self, initial: _initialIndex == 0});
 
         if (!self.result.fetchedOnce()) {
@@ -389,9 +456,11 @@ var Snippet = function (vm, notebook, snippet) {
           setTimeout(function () {
             self.fetchResultData(rows, false);
           }, 500);
+        } else if (notebook.snippets()[notebook.snippets().length - 1] == self) {
+          notebook.newSnippet();
         }
       } else {
-        self._ajax_error(data);
+        self._ajaxError(data);
         $(document).trigger("renderDataError", {snippet: self});
       }
     }).fail(function (xhr, textStatus, errorThrown) {
@@ -402,7 +471,7 @@ var Snippet = function (vm, notebook, snippet) {
   self.fetchResultMetadata = function () {
     $.post("/spark/api/fetch_result_metadata", {
       notebook: ko.mapping.toJSON(notebook.getContext()),
-      snippet: ko.mapping.toJSON(self.getContext()),
+      snippet: ko.mapping.toJSON(self.getContext())
     }, function (data) {
       if (data.status == 0) {
         self.result.meta(data.result.meta);
@@ -424,7 +493,7 @@ var Snippet = function (vm, notebook, snippet) {
         self.status(data.query_status.status);
         self.getLogs();
 
-        if (self.status() == 'running') {
+        if (self.status() == 'running' || self.status() == 'starting') {
           self.result.endTime(new Date());
           self.checkStatusTimeout = setTimeout(self.checkStatus, 1000);
         }
@@ -432,8 +501,11 @@ var Snippet = function (vm, notebook, snippet) {
           self.fetchResult(100);
           self.progress(100);
         }
+        else if (self.status() == 'success') {
+          self.progress(99);
+        }
       } else {
-        self._ajax_error(data);
+        self._ajaxError(data);
       }
     }).fail(function (xhr, textStatus, errorThrown) {
       $(document).trigger("error", xhr.responseText);
@@ -454,7 +526,7 @@ var Snippet = function (vm, notebook, snippet) {
       if (data.status == 0) {
         self.status('canceled');
       } else {
-        self._ajax_error(data);
+        self._ajaxError(data);
       }
     }).fail(function (xhr, textStatus, errorThrown) {
       $(document).trigger("error", xhr.responseText);
@@ -475,7 +547,7 @@ var Snippet = function (vm, notebook, snippet) {
       if (data.status == 0) {
         // self.status('closed'); // Keep as 'running' as currently it happens before running a new query
       } else {
-        self._ajax_error(data);
+        self._ajaxError(data);
       }
     }).fail(function (xhr, textStatus, errorThrown) {
       $(document).trigger("error", xhr.responseText);
@@ -486,13 +558,23 @@ var Snippet = function (vm, notebook, snippet) {
   self.getLogs = function () {
     $.post("/spark/api/get_logs", {
       notebook: ko.mapping.toJSON(notebook.getContext()),
-      snippet: ko.mapping.toJSON(self.getContext())
+      snippet: ko.mapping.toJSON(self.getContext()),
+      from: self.result.logLines
     }, function (data) {
       if (data.status == 0) {
-        self.result.logs(data.logs); // Way to append?
+        if (data.logs.length > 0) {
+          var logs = data.logs.split("\n");
+          self.result.logLines += logs.length;
+          var oldLogs = self.result.logs();
+          if (oldLogs === "") {
+            self.result.logs(data.logs);
+          } else {
+            self.result.logs(oldLogs + "\n" + data.logs);
+          }
+        }
         self.progress(data.progress);
       } else {
-        self._ajax_error(data);
+        self._ajaxError(data);
       }
     }).fail(function (xhr, textStatus, errorThrown) {
       $(document).trigger("error", xhr.responseText);
@@ -510,8 +592,31 @@ var Snippet = function (vm, notebook, snippet) {
       self.progress(0);
     }
   };
-}
+};
 
+var Session = function(vm, session) {
+  var self = this;
+  ko.mapping.fromJS(session, {}, self);
+
+  self.selectedSessionProperty = ko.observable('');
+
+  self.restarting = ko.observable(false);
+
+  if (! ko.isObservable(self.properties)) {
+    self.properties = ko.observableArray();
+  }
+
+  self.availableNewProperties = ko.computed(function() {
+    var addedIndex = {};
+    $.each(self.properties(), function(index, property) {
+      addedIndex[property.name()] = true;
+    });
+    var result = $.grep(vm.availableSessionProperties(), function(property) {
+      return ! addedIndex[property.name];
+    });
+    return result;
+  });
+};
 
 var Notebook = function (vm, notebook) {
   var self = this;
@@ -522,7 +627,12 @@ var Notebook = function (vm, notebook) {
   self.description = ko.observable(typeof notebook.description != "undefined" && notebook.description != null ? notebook.description: '');
   self.snippets = ko.observableArray();
   self.selectedSnippet = ko.observable(vm.availableSnippets()[0].type());
-  self.sessions = ko.mapping.fromJS(typeof notebook.sessions != "undefined" && notebook.sessions != null ? notebook.sessions : []);
+  self.creatingSessionLocks = ko.observableArray();
+  self.sessions = ko.mapping.fromJS(typeof notebook.sessions != "undefined" && notebook.sessions != null ? notebook.sessions : [], {
+    create: function(value) {
+      return new Session(vm, value.data);
+    }
+  });
 
   self.getSession = function (session_type) {
     var _s = null;
@@ -533,6 +643,40 @@ var Notebook = function (vm, notebook) {
       }
     });
     return _s;
+  };
+
+  self.getSnippets = function(type) {
+    return $.grep(self.snippets(), function (snippet) {
+      return snippet.type() == type;
+    });
+  };
+
+  self.restartSession = function (session, callback) {
+    if (session.restarting()) {
+      return;
+    }
+    session.restarting(true);
+    var snippets = self.getSnippets(session.type());
+
+    $.each(snippets, function(index, snippet) {
+      snippet.status('loading');
+    });
+
+    var sessionJson = ko.mapping.toJSON(session);
+
+    self.closeSession (session, true, function() {
+      self.createSession(session, function () {
+        $.each(snippets, function(index, snippet) {
+          snippet.status('ready');
+        });
+        session.restarting(false);
+        if (callback) {
+          callback();
+        }
+      }, function () {
+        session.restarting(false);
+      });
+    });
   };
 
   self.addSession = function (session) {
@@ -550,47 +694,104 @@ var Notebook = function (vm, notebook) {
     self.sessions.push(session);
   };
 
-  self.addSnippet = function (snippet) {
+  self.addSnippet = function (snippet, skipSession) {
     var _snippet = new Snippet(vm, self, snippet);
     self.snippets.push(_snippet);
 
-    if (self.getSession(_snippet.type()) == null) {
-      _snippet.create_session();
+    if (self.getSession(_snippet.type()) == null && typeof skipSession == "undefined") {
+      window.setTimeout(function() {
+        _snippet.status('loading');
+        self.createSession(new Session(vm, {'type': _snippet.type()}));
+      }, 200);
+    } else {
+      _snippet.status('ready');
     }
 
     _snippet.init();
+    return _snippet;
+  };
+
+  self.createSession = function (session, callback, failCallback) {
+    if (self.creatingSessionLocks().indexOf(session.type()) != -1) { // Create one type of session max
+      return;
+    } else {
+      self.creatingSessionLocks.push(session.type());
+    }
+
+    $.each(self.getSnippets(session.type()), function(index, snippet) {
+      snippet.status('loading');
+    });
+
+    var fail = function (message) {
+      $.each(self.getSnippets(session.type()), function(index, snippet) {
+        snippet.status('failed');
+      });
+      $(document).trigger("error", message);
+      if (failCallback) {
+        failCallback();
+      }
+    };
+
+    $.post("/spark/api/create_session", {
+      notebook: ko.mapping.toJSON(self.getContext()),
+      session: ko.mapping.toJSON(session) // e.g. {'type': 'hive', 'properties': [{'driverCores': '2'}]}
+    }, function (data) {
+      if (data.status == 0) {
+        ko.mapping.fromJS(data.session, {}, session);
+        if (self.getSession(session.type()) == null) {
+          self.addSession(session);
+        }
+        $.each(self.getSnippets(session.type()), function(index, snippet) {
+          snippet.status('ready');
+        });
+        if (callback) {
+          setTimeout(callback, 500);
+        }
+      }
+      else {
+        fail(data.message);
+      }
+    }).fail(function (xhr) {
+      fail(xhr.responseText);
+    }).complete(function(xhr, status) {
+      self.creatingSessionLocks.remove(session.type());
+    })
   };
 
   self.newSnippet = function () {
-    var _snippet = new Snippet(vm, self, {type: self.selectedSnippet(), result: {}});
-    self.snippets.push(_snippet);
+    self.addSnippet({
+      type: self.selectedSnippet(),
+      result: {}
+    });
 
-    if (self.getSession(self.selectedSnippet()) == null) {
-      _snippet.create_session();
-    }
-    else {
-      _snippet.status('ready');
-    }
-    $(document).trigger("snippetAdded", _snippet);
+    window.setTimeout(function () {
+      var lastSnippet = self.snippets()[self.snippets().length - 1];
+      if (lastSnippet.ace() != null) {
+        lastSnippet.ace().focus();
+      }
+    }, 100);
+
+    logGA('/add_snippet/' + self.selectedSnippet());
   };
 
+  self.getContext = function() {
+   return {
+       id: self.id,
+       uuid: self.uuid,
+       sessions: self.sessions
+    };
+  };
+
+  // Init
   if (notebook.snippets) {
     $.each(notebook.snippets, function (index, snippet) {
       self.addSnippet(snippet);
     });
   }
-  
-  self.getContext = function() {
-    return {
-        id: self.id,
-        uuid: self.uuid,
-        sessions: self.sessions
-    };
-  }
 
   self.save = function () {
     $.post("/spark/api/notebook/save", {
-      "notebook": ko.mapping.toJSON(self)
+      "notebook": ko.mapping.toJSON(self, SPARK_MAPPING)
     }, function (data) {
       if (data.status == 0) {
         self.id(data.id);
@@ -608,11 +809,9 @@ var Notebook = function (vm, notebook) {
   };
 
   self.close = function () {
-    if (self.id() != null) {
-      $.post("/spark/api/notebook/close", {
-        "notebook": ko.mapping.toJSON(self)
-      });
-    }
+    $.post("/spark/api/notebook/close", {
+      "notebook": ko.mapping.toJSON(self, SPARK_MAPPING)
+    });
   };
 
   self.clearResults = function () {
@@ -621,7 +820,32 @@ var Notebook = function (vm, notebook) {
       snippet.status('ready');
     });
   };
-}
+
+  self.closeAndRemoveSession = function (session) {
+    self.closeSession (session, false, function() {
+      self.sessions.remove(session);
+    });
+  };
+
+  self.closeSession = function (session, silent, callback) {
+    $.post("/spark/api/close_session", {
+      session: ko.mapping.toJSON(session)
+    }, function (data) {
+      if (!silent && data.status != 0 && data.status != -2) {
+        $(document).trigger("error", data.message);
+        return;
+      }
+
+      if (callback) {
+        callback();
+      }
+    }).fail(function (xhr) {
+      if (!silent) {
+        $(document).trigger("error", xhr.responseText);
+      }
+    });
+  };
+};
 
 
 function EditorViewModel(notebooks, options) {
@@ -629,6 +853,25 @@ function EditorViewModel(notebooks, options) {
 
   self.notebooks = ko.observableArray();
   self.selectedNotebook = ko.observable();
+  self.combinedContent = ko.observable();
+
+  self.displayCombinedContent = function () {
+    if (! self.selectedNotebook()) {
+      self.combinedContent('');
+    } else {
+      var statements = '';
+      $.each(self.selectedNotebook().snippets(), function (index, snippet) {
+        if (snippet.statement()) {
+          if (statements) {
+            statements += '\n\n';
+          }
+          statements += snippet.statement();
+        }
+      });
+      self.combinedContent(statements);
+    }
+    $("#combinedContentModal").modal("show");
+  };
 
   self.isEditing = ko.observable(false);
   self.isEditing.subscribe(function (newVal) {
@@ -638,19 +881,49 @@ function EditorViewModel(notebooks, options) {
     self.isEditing(!self.isEditing());
   };
 
-  self.isAssistAvailable = ko.observable(true);
+  self.removeSnippetConfirmation = ko.observable();
 
-  self.isAssistVisible = ko.observable(options.assistVisible);
-  self.toggleAssist = function () {
-    self.isAssistVisible(!self.isAssistVisible());
-    $(document).trigger("toggleAssist");
+  self.removeSnippet = function (notebook, snippet) {
+    self.removeSnippetConfirmation({ notebook: notebook, snippet: snippet });
+    $("#removeSnippetModal").modal("show");
   };
 
-  self.assistContent = ko.observable();
-  self.assistSelectedMainObject = ko.observable();
+  self.assistAvailable = options.assistAvailable;
+
+  self.isLeftPanelVisible = ko.observable(self.assistAvailable && $.totalStorage('spark_left_panel_visible') != null && $.totalStorage('spark_left_panel_visible'));
+
+  self.isLeftPanelVisible.subscribe(function(newValue) {
+    $.totalStorage('spark_left_panel_visible', newValue);
+  });
 
   self.availableSnippets = ko.mapping.fromJS(options.languages);
   self.snippetPlaceholders = options.snippet_placeholders;
+
+  self.availableSessionProperties = ko.computed(function () { // Only Spark
+    return ko.utils.arrayFilter(options.session_properties, function (item) {
+        return item.name != ''; // Could filter out the ones already selected + yarn only or not
+      });
+  });
+  self.getSessionProperties = function(name) {
+    var _prop = null;
+    $.each(options.session_properties, function(index, prop) {
+      if (prop.name == name) {
+        _prop = prop;
+        return;
+      }
+    });
+    return _prop;
+  };
+
+  self.getSnippetName = function(snippetType)  {
+    var availableSnippets = self.availableSnippets();
+    for (var i = 0; i < availableSnippets.length; i++) {
+      if (availableSnippets[i].type() === snippetType) {
+        return availableSnippets[i].name();
+      }
+    }
+    return '';
+  };
 
   self.init = function () {
     $.each(notebooks, function (index, notebook) {
@@ -666,6 +939,9 @@ function EditorViewModel(notebooks, options) {
     self.notebooks.push(_n);
     if (_n.snippets().length > 0) {
       _n.selectedSnippet(_n.snippets()[_n.snippets().length - 1].type());
+      _n.snippets().forEach(function(snippet){
+        snippet.statement_raw.valueHasMutated();
+      });
     }
   };
 
@@ -682,6 +958,6 @@ function EditorViewModel(notebooks, options) {
 
 function logGA(page) {
   if (typeof trackOnGA == 'function') {
-    trackOnGA('editor/' + page);
+    trackOnGA('notebook/' + page);
   }
 }

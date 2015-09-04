@@ -24,6 +24,8 @@ import re
 import shutil
 import StringIO
 import tempfile
+import uuid
+
 from dateutil.parser import parse
 
 from django.conf import settings
@@ -129,7 +131,7 @@ def get_field_types(field_list, iterations=3):
 
     try:
       parse(value)
-    except:
+    except OverflowError:
       raise ValueError()
 
   def test_int(value):
@@ -218,6 +220,7 @@ def field_values_from_separated_file(fh, delimiter, quote_character, fields=None
 
   content = fh.read()
   headers = None
+
   while content:
     last_newline = content.rfind('\n')
     if last_newline > -1:
@@ -230,7 +233,7 @@ def field_values_from_separated_file(fh, delimiter, quote_character, fields=None
           csvfile = StringIO.StringIO(content[:last_newline])
         else:
           csvfile = StringIO.StringIO('\n' + content[:last_newline])
-        content = content[last_newline+1:] + fh.read()
+        content = content[last_newline + 1:] + fh.read()
     else:
       if headers is None:
         csvfile = StringIO.StringIO(content)
@@ -286,6 +289,10 @@ def field_values_from_separated_file(fh, delimiter, quote_character, fields=None
           if key in row:
             row[key] = str(row[key]).lower() == "true"
 
+      # Add mock id random value
+      if 'id' not in row:
+        row['id'] = str(uuid.uuid4())
+
       yield row
 
 
@@ -302,10 +309,12 @@ def field_values_from_log(fh, fields=[ {'name': 'message', 'type': 'text_general
     try:
       timestamp_key = next(iter(filter(lambda field: field['type'] in DATE_FIELD_TYPES, fields)))['name']
     except:
+      LOG.exception('failed to get timestamp key')
       timestamp_key = None
     try:
       message_key = next(iter(filter(lambda field: field['type'] in TEXT_FIELD_TYPES, fields)))['name']
     except:
+      LOG.exception('failed to get message key')
       message_key = None
 
   def value_generator(buf):
@@ -350,3 +359,13 @@ def fields_from_log(fh):
   fields.append(('message', 'text_general'))
 
   return fields
+
+
+def get_default_fields():
+  """
+  Returns a list of default fields for the Solr schema.xml
+  :return:
+  """
+  default_field = DEFAULT_FIELD
+  default_field.update({'name': 'id', 'type': 'string', 'multiValued': 'false'})
+  return [default_field]

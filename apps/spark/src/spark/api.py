@@ -18,9 +18,9 @@
 import json
 import logging
 
-from django.http import HttpResponse
 from django.core.urlresolvers import reverse
 from django.utils.translation import ugettext as _
+from django.views.decorators.http import require_GET, require_POST
 
 from desktop.lib.django_util import JsonResponse
 from desktop.models import Document2, Document
@@ -33,19 +33,45 @@ from oozie.decorators import check_document_access_permission
 LOG = logging.getLogger(__name__)
 
 
+@require_POST
 @check_document_access_permission()
 @api_error_handler
 def create_session(request):
   response = {'status': -1}
 
-  snippet = json.loads(request.POST.get('snippet', '{}'))
+  notebook = json.loads(request.POST.get('notebook', '{}'))
+  session = json.loads(request.POST.get('session', '{}'))
 
-  response['session'] = get_api(request.user, snippet).create_session(lang=snippet['type'])
+  properties = session.get('properties', [])
+
+  # If not properties look for previously used notebook session
+  if not properties:
+    old_session = [_session for _session in notebook['sessions'] if _session['type'] == session['type']]
+    if any(old_session) and 'properties' in old_session[0]:
+      properties = old_session[0]['properties']
+
+  response['session'] = get_api(request.user, session).create_session(lang=session['type'], properties=properties)
+  response['session']['properties'] = properties
   response['status'] = 0
 
   return JsonResponse(response)
 
 
+@require_POST
+@check_document_access_permission()
+@api_error_handler
+def close_session(request):
+  response = {'status': -1}
+
+  session = json.loads(request.POST.get('session', '{}'))
+
+  response['session'] = get_api(request.user, {'type': session['type']}).close_session(session=session)
+  response['status'] = 0
+
+  return JsonResponse(response)
+
+
+@require_POST
 @check_document_access_permission()
 @api_error_handler
 def execute(request):
@@ -60,6 +86,7 @@ def execute(request):
   return JsonResponse(response)
 
 
+@require_POST
 @check_document_access_permission()
 @api_error_handler
 def check_status(request):
@@ -74,6 +101,7 @@ def check_status(request):
   return JsonResponse(response)
 
 
+@require_POST
 @check_document_access_permission()
 @api_error_handler
 def fetch_result_data(request):
@@ -90,6 +118,7 @@ def fetch_result_data(request):
   return JsonResponse(response)
 
 
+@require_POST
 @check_document_access_permission()
 @api_error_handler
 def fetch_result_metadata(request):
@@ -104,6 +133,7 @@ def fetch_result_metadata(request):
   return JsonResponse(response)
 
 
+@require_POST
 @check_document_access_permission()
 @api_error_handler
 def cancel_statement(request):
@@ -118,6 +148,7 @@ def cancel_statement(request):
   return JsonResponse(response)
 
 
+@require_POST
 @check_document_access_permission()
 @api_error_handler
 def get_logs(request):
@@ -126,9 +157,15 @@ def get_logs(request):
   notebook = json.loads(request.POST.get('notebook', '{}'))
   snippet = json.loads(request.POST.get('snippet', '{}'))
 
+  startFrom = request.POST.get('from')
+  startFrom = int(startFrom) if startFrom else None
+
+  size = request.POST.get('size')
+  size = int(size) if size else None
+
   db = get_api(request.user, snippet)
-  response['logs'] = db.get_log(snippet)
-  response['progress'] = db._progress(snippet, response['logs']) if snippet['status'] != 'available' else 100
+  response['logs'] = db.get_log(snippet, startFrom=startFrom, size=size)
+  response['progress'] = db._progress(snippet, response['logs']) if snippet['status'] != 'available' and snippet['status'] != 'success' else 100
   response['job_urls'] = [{
       'name': job,
       'url': reverse('jobbrowser.views.single_job', kwargs={'job': job})
@@ -138,6 +175,7 @@ def get_logs(request):
   return JsonResponse(response)
 
 
+@require_POST
 @check_document_modify_permission()
 def save_notebook(request):
   response = {'status': -1}
@@ -150,10 +188,12 @@ def save_notebook(request):
     notebook_doc = Document2.objects.create(name=notebook['name'], type='notebook', owner=request.user)
     Document.objects.link(notebook_doc, owner=notebook_doc.owner, name=notebook_doc.name, description=notebook_doc.description, extra='notebook')
 
+  notebook_doc1 = notebook_doc.doc.get()
   notebook_doc.update_data(notebook)
-  notebook_doc.name = notebook['name']
-  notebook_doc.description = notebook['description']
+  notebook_doc.name = notebook_doc1.name = notebook['name']
+  notebook_doc.description = notebook_doc1.description = notebook['description']
   notebook_doc.save()
+  notebook_doc1.save()
 
   response['status'] = 0
   response['id'] = notebook_doc.id
@@ -162,6 +202,7 @@ def save_notebook(request):
   return JsonResponse(response)
 
 
+@require_GET
 @check_document_access_permission()
 def open_notebook(request):
   response = {'status': -1}
@@ -176,35 +217,42 @@ def open_notebook(request):
   return JsonResponse(response)
 
 
+@require_POST
 @check_document_access_permission()
 def close_notebook(request):
-  response = {'status': -1}
+  response = {'status': -1, 'result': []}
 
   notebook = json.loads(request.POST.get('notebook', '{}'))
 
-  response['status'] = 0
-  for snippet in notebook['snippets']:
+  for session in notebook['sessions']:
     try:
-      if snippet['result']['handle']:
-        get_api(request.user, snippet).close(snippet)
+      response['result'].append(get_api(request.user, session).close_session(session))
     except QueryExpired:
       pass
+    except Exception, e:
+      LOG.exception('Error closing session %s' % e.message)
+
+  response['status'] = 0
   response['message'] = _('Notebook closed !')
 
   return JsonResponse(response)
 
 
+@require_POST
 @check_document_access_permission()
 def close_statement(request):
   response = {'status': -1}
 
+  # Passed by check_document_access_permission but unused by APIs
   notebook = json.loads(request.POST.get('notebook', '{}'))
   snippet = json.loads(request.POST.get('snippet', '{}'))
 
   try:
-    response['result'] = get_api(request.user, snippet).close(snippet)
+    response['result'] = get_api(request.user, snippet).close_statement(snippet)
   except QueryExpired:
     pass
+
   response['status'] = 0
+  response['message'] = _('Statement closed !')
 
   return JsonResponse(response)

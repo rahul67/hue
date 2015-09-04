@@ -65,7 +65,7 @@ nv.models.growingDiscreteBarChart = function() {
   //------------------------------------------------------------
 
   var showTooltip = function(e, offsetElement) {
-    var left = e.pos[0] + ( offsetElement.offsetLeft || 0 ),
+    var left = e.e.clientX,
         top = e.pos[1] + ( offsetElement.offsetTop || 0),
         x = xAxis.tickFormat()(discretebar.x()(e.point, e.pointIndex)),
         y = yAxis.tickFormat()(discretebar.y()(e.point, e.pointIndex)),
@@ -111,9 +111,13 @@ nv.models.growingDiscreteBarChart = function() {
           .attr('y', margin.top + availableHeight / 2)
           .text(function(d) { return d });
 
+        container.selectAll('.nv-discreteBarWithAxes').style('visibility', 'hidden');
+        container.selectAll('.nv-noData').style('visibility', 'visible');
+
         return chart;
       } else {
-        container.selectAll('.nv-noData').remove();
+        container.selectAll('.nv-discreteBarWithAxes').style('visibility', 'visible');
+        container.selectAll('.nv-noData').style('visibility', 'hidden');
       }
 
       //------------------------------------------------------------

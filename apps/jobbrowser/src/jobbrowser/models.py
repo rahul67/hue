@@ -23,8 +23,11 @@ import urllib2
 
 from urlparse import urlparse, urlunparse
 
+from django.core.urlresolvers import reverse
 from desktop.lib.view_util import format_duration_in_millis
 from desktop.lib import i18n
+from django.utils.html import escape
+from filebrowser.views import location_to_url
 from hadoop import job_tracker
 from hadoop import confparse
 from hadoop.api.jobtracker.ttypes import JobNotFoundException
@@ -33,7 +36,7 @@ import hadoop.api.jobtracker.ttypes as ttypes
 from desktop.lib.exceptions_renderable import PopupException
 
 from django.utils.translation import ugettext as _
-
+from jobbrowser.conf import DISABLE_KILLING_JOBS
 
 LOGGER = logging.getLogger(__name__)
 
@@ -52,6 +55,20 @@ def get_acls(job):
   else:
     return job.full_job_conf
 
+def can_kill_job(self, user):
+  if DISABLE_KILLING_JOBS.get():
+    return False
+
+  if self.status.lower() not in ('running', 'pending', 'accepted'):
+    return False
+
+  if user.is_superuser:
+    return True
+
+  if can_modify_job(user.username, self):
+    return True
+
+  return user.username == self.user
 
 class JobLinkage(object):
   """
@@ -131,7 +148,7 @@ class Job(JobLinkage):
     self._init_attributes()
     self.is_retired = hasattr(thriftJob, 'is_retired')
     self.is_mr2 = False
-    self.applicationType = 'MR2'
+    self.applicationType = 'MAPREDUCE'
 
   @property
   def counters(self):
@@ -231,7 +248,7 @@ class Job(JobLinkage):
   def get_task(self, id):
     try:
       return self.task_map[id]
-    except:
+    except KeyError:
       return JobLinkage.get_task(self, id)
 
   def filter_tasks(self, task_types=None, task_states=None, task_text=None):
@@ -540,6 +557,41 @@ class Cluster(object):
     self.blacklistedTrackerNames = self.status.blacklistedTrackerNames
     self.hostname = self.status.hostname
     self.httpPort = self.status.httpPort
+
+
+class LinkJobLogs(object):
+
+  @classmethod
+  def _make_hdfs_links(cls, log):
+    escaped_logs = escape(log)
+    return re.sub('((?<= |;)/|hdfs://)[^ <&\t;,\n]+', LinkJobLogs._replace_hdfs_link, escaped_logs)
+
+  @classmethod
+  def _make_mr_links(cls, log):
+    escaped_logs = escape(log)
+    return re.sub('(job_[0-9]{12}_[0-9]+)', LinkJobLogs._replace_mr_link, escaped_logs)
+
+  @classmethod
+  def _make_links(cls, log):
+    escaped_logs = escape(log)
+    hdfs_links = re.sub('((?<= |;)/|hdfs://)[^ <&\t;,\n]+', LinkJobLogs._replace_hdfs_link, escaped_logs)
+    return re.sub('(job_[0-9]{12}_[0-9]+)', LinkJobLogs._replace_mr_link, hdfs_links)
+
+  @classmethod
+  def _replace_hdfs_link(self, match):
+    try:
+      return '<a href="%s" target="_blank">%s</a>' % (location_to_url(match.group(0), strict=False), match.group(0))
+    except:
+      LOGGER.exception('failed to replace hdfs links: %s' % (match.groups(),))
+      return match.group(0)
+
+  @classmethod
+  def _replace_mr_link(self, match):
+    try:
+      return '<a href="%s" target="_blank">%s</a>' % (reverse('jobbrowser.views.single_job', kwargs={'job': match.group(0)}), match.group(0))
+    except:
+      LOGGER.exception('failed to replace mr links: %s' % (match.groups(),))
+      return match.group(0)
 
 
 def get_jobconf(jt, jobid):

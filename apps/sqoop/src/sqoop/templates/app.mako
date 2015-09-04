@@ -14,7 +14,7 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
-  from desktop.views import commonheader, commonfooter
+  from desktop.views import commonheader, commonfooter, _ko
   from desktop import conf
   from django.utils.translation import ugettext as _
   from django.core.urlresolvers import reverse
@@ -92,13 +92,13 @@ ${ commonheader(None, "sqoop", user) | n,unicode }
           <li data-bind="routie: 'job/edit/' + id()" title="${ _('Click to edit') }">
             <div class="pull-right">
               <span class="label label-success" data-bind="visible: hasSucceeded">
-                <span data-bind="text: ('${_('Last run: ')}' + submission().createdFormatted())"></span>
+                <span data-bind="text: ('${_ko('Last run: ')}' + submission().createdFormatted())"></span>
               </span>
               <span class="label label-warning" data-bind="visible: isRunning">
                 <span data-bind="text: submission().status"></span>
               </span>
               <span class="label label-error" style="display: inline-block" data-bind="visible: hasFailed">
-                <span data-bind="text: ('${_('Last run: ')}' + submission().createdFormatted())"></span>
+                <span data-bind="text: ('${_ko('Last run: ')}' + submission().createdFormatted())"></span>
               </span>
             </div>
             <div class="main" data-bind="template: {name: 'job-list-item'}"></div>
@@ -337,6 +337,8 @@ ${ commonheader(None, "sqoop", user) | n,unicode }
 <h4 style="display: inline-block">
   <i class="fa fa-download"></i>&nbsp;
 
+  <span data-bind="text: name" class="muted"></span>
+
   <!-- ko if: fromLabel() && toLabel() -->
   <span data-bind="text: fromLabel"></span>
   <span>${_(' to ')}</span>
@@ -530,7 +532,7 @@ ${ commonheader(None, "sqoop", user) | n,unicode }
 <div data-bind="css:{'control-group': id() != null, warning: name() in $root.warnings(), error: name() in $root.errors()}">
   <label class="control-label" data-bind="text: $root.label('driver', name())"></label>
   <div class="controls">
-    <select class="input-xlarge" data-bind="'options': values, 'value': value, 'optionsCaption': '${ _('Choose...') }', 'attr': { 'name': name, 'title': $root.help('driver', name())}" rel="tooltip">
+    <select class="input-xlarge" data-bind="'options': values, 'value': value, 'optionsCaption': '${ _ko('Choose...') }', 'attr': { 'name': name, 'title': $root.help('driver', name())}" rel="tooltip">
     </select>
     <span data-bind="template: {'name': 'job-editor-form-field-error'}" class="help-inline"></span>
   </div>
@@ -627,7 +629,7 @@ ${ commonheader(None, "sqoop", user) | n,unicode }
                 }" class="control-group">
   <label class="control-label" data-bind="text: $root.label('connector', name())" rel="tooltip"></label>
   <div class="controls">
-    <select class="input-xlarge" data-bind="'options': values, 'value': value, 'optionsCaption': '${ _('Choose...') }', attr: { 'name': name, 'title': $root.help('connector', name()) }" rel="tooltip">
+    <select class="input-xlarge" data-bind="'options': values, 'value': value, 'optionsCaption': '${ _ko('Choose...') }', attr: { 'name': name, 'title': $root.help('connector', name()) }" rel="tooltip">
     </select>
     <span data-bind="template: { 'name': 'job-editor-form-field-error' }" class="help-inline"></span>
   </div>
@@ -681,8 +683,8 @@ ${ commonheader(None, "sqoop", user) | n,unicode }
 <script src="${ static('desktop/ext/js/datatables-paging-0.1.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/routie-0.3.0.min.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/moment-with-locales.min.js') }" type="text/javascript" charset="utf-8"></script>
-<script src="${ static('desktop/ext/js/knockout-min.js') }" type="text/javascript" charset="utf-8"></script>
-<script src="${ static('desktop/ext/js/knockout.mapping-2.3.2.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/ext/js/knockout.min.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/ext/js/knockout-mapping.min.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/bootstrap-editable.min.js') }"></script>
 <script src="${ static('desktop/js/ko.editable.js') }"></script>
 <script src="${ static('desktop/js/jquery.hdfsautocomplete.js') }" type="text/javascript" charset="utf-8"></script>

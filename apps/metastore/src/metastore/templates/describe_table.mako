@@ -36,11 +36,18 @@ ${ components.menubar() }
 <link rel="stylesheet" href="${ static('metastore/css/metastore.css') }" type="text/css">
 
 
-<%def name="column_table(cols)">
-  <table class="table table-striped table-condensed sampleTable">
+<%def name="column_table(cols, id, withStats=False)">
+  <table id="${id}" class="table table-striped table-condensed sampleTable
+  %if withStats:
+  skip-extender
+  %endif
+  ">
     <thead>
       <tr>
-        <th>&nbsp;</th>
+        <th width="1%">&nbsp;</th>
+        %if withStats:
+          <th width="1%" class="no-sort">&nbsp;</th>
+        %endif
         <th>${_('Name')}</th>
         <th>${_('Type')}</th>
         <th>${_('Comment')}</th>
@@ -50,6 +57,9 @@ ${ components.menubar() }
       % for column in cols:
         <tr>
           <td>${ loop.index }</td>
+          %if withStats:
+            <td class="row-selector-exclude"><a href="javascript:void(0)" data-column="${ column.name }"><i class="fa fa-bar-chart" title="${ _('View statistics') }"></i></a></td>
+          %endif
           <td title="${ _("Scroll to the column") }">
             <a href="javascript:void(0)" data-row-selector="true" class="column-selector">${ column.name }</a>
           </td>
@@ -91,7 +101,7 @@ ${ components.menubar() }
             % endif
 
             <ul class="nav nav-tabs">
-              <li class="active"><a href="#columns" data-toggle="tab">${_('Columns')}</a></li>
+              <li><a href="#columns" data-toggle="tab">${_('Columns')}</a></li>
               % if table.partition_keys:
               <li><a href="#partitionColumns" data-toggle="tab">${_('Partition Columns')}</a></li>
               % endif
@@ -102,13 +112,13 @@ ${ components.menubar() }
             </ul>
 
             <div class="tab-content">
-              <div class="active tab-pane" id="columns">
-                ${ column_table(table.cols) }
+              <div class="tab-pane" id="columns">
+                ${ column_table(table.cols, "columnTable", True) }
               </div>
 
               % if table.partition_keys:
               <div class="tab-pane" id="partitionColumns">
-                ${ column_table(table.partition_keys) }
+                ${ column_table(table.partition_keys, "partitionTable") }
               </div>
               % endif
 
@@ -146,6 +156,13 @@ ${ components.menubar() }
                   % endfor
                   </tbody>
                 </table>
+                <div id="jumpToColumnAlert" class="alert hide" style="margin-top: 12px;">
+                  <button type="button" class="close" data-dismiss="alert">&times;</button>
+                  <strong>${_('Did you know?')}</strong>
+                  <ul>
+                    <li>${ _('If the sample contains a large number of columns, click a row to select a column to jump to') }</li>
+                  </ul>
+                </div>
               % endif
               </div>
               % endif
@@ -205,35 +222,62 @@ ${ components.menubar() }
 <div id="import-data-modal" class="modal hide fade"></div>
 </div>
 
-<script type="text/javascript" charset="utf-8">
-  $(document).ready(function () {
-    $(".datatables").dataTable({
-      "bPaginate": false,
-      "bLengthChange": false,
-      "bInfo": false,
-      "bFilter": false,
-      "oLanguage": {
-        "sEmptyTable": "${_('No data available')}",
-        "sZeroRecords": "${_('No matching records')}",
-      },
-      "aoColumns": [
-        { "sWidth" : "10px" },
-        null,
-        null,
-        { "bSortable": false }
-      ],
-    });
+<div id="columnAnalysis" class="popover mega-popover right">
+  <div class="arrow"></div>
+  <h3 class="popover-title" style="text-align: left">
+    <a class="pull-right pointer close-popover" style="margin-left: 8px"><i class="fa fa-times"></i></a>
+    <a class="pull-right pointer stats-refresh" style="margin-left: 8px"><i class="fa fa-refresh"></i></a>
+    <strong class="column-name"></strong> ${ _(' column analysis') }
+  </h3>
+  <div class="popover-content">
+    <div class="pull-right hide filter">
+      <input id="columnAnalysisTermsFilter" type="text" placeholder="${ _('Prefix filter...') }"/>
+    </div>
+    <ul class="nav nav-tabs" role="tablist">
+      <li class="active"><a href="#columnAnalysisStats" role="tab" data-toggle="tab">${ _('Stats') }</a></li>
+      <li><a href="#columnAnalysisTerms" role="tab" data-toggle="tab">${ _('Terms') }</a></li>
+    </ul>
+    <div class="tab-content">
+      <div class="tab-pane active" id="columnAnalysisStats" style="text-align: left">
+        <div class="content"></div>
+      </div>
+      <div class="tab-pane" id="columnAnalysisTerms" style="text-align: left">
+        <div class="alert">${ _('There are no terms to be shown') }</div>
+        <div class="content"></div>
+      </div>
+    </div>
+  </div>
+</div>
 
-    $(".column-selector").on("click", function () {
+<script src="${ static('beeswax/js/stats.utils.js') }"></script>
+
+<script type="text/javascript" charset="utf-8">
+  var STATS_PROBLEMS = "${ _('There was a problem loading the stats.') }";
+
+  $(document).ready(function () {
+
+    function selectColumn(col) {
       var _t = $("#sample");
-      var _text = $.trim($(this).text().split("(")[0]);
       var _col = _t.find("th").filter(function() {
-        return $.trim($(this).text()) == _text;
+        return $.trim($(this).text()) == col;
       });
       _t.find(".columnSelected").removeClass("columnSelected");
       _t.find("tr td:nth-child(" + (_col.index() + 1) + ")").addClass("columnSelected");
       $("a[href='#sample']").click();
+
+    }
+
+    $(".column-selector").on("click", function () {
+      selectColumn($.trim($(this).text().split("(")[0]));
     });
+
+    if (window.location.hash != "") {
+      if (window.location.hash.indexOf("col=") > -1) {
+        window.setTimeout(function(){
+          selectColumn(window.location.hash.split("=")[1]);
+        }, 200)
+      }
+    }
 
     % if has_write_access:
         $.getJSON("${ url('metastore:drop_table', database=database) }", function (data) {
@@ -241,24 +285,54 @@ ${ components.menubar() }
         });
     % endif
 
-    $('a[data-toggle="tab"]').on('shown', function () {
-      $(".sampleTable").not('.initialized').addClass('initialized').dataTable({
-        "bPaginate": false,
-        "bLengthChange": false,
-        "bInfo": false,
-        "bFilter": false,
-        "fnInitComplete": function () {
-          $(".sampleTable").parent().jHueTableScroller();
-          $(".sampleTable").jHueTableExtender({
-            hintElement: "#jumpToColumnAlert",
-            fixedHeader: true
-          });
-        },
-        "oLanguage": {
-          "sEmptyTable": "${_('No data available')}",
-          "sZeroRecords": "${_('No matching records')}",
+    $('a[data-toggle="tab"]').on('shown', function (e) {
+      var sortables = [];
+      $(".sampleTable").not('.initialized').each(function () {
+        var _id = $(this).attr("id");
+        if (sortables[_id] === undefined) {
+          sortables[_id] = [];
         }
+        $('#' + _id + ' thead th').each(function () {
+          if ($(this).hasClass('no-sort')) {
+            sortables[_id].push({
+              "bSortable": false
+            });
+          } else {
+            sortables[_id].push(null);
+          }
+        });
       });
+
+      for (var id in sortables) {
+        $("#" + id).addClass("initialized");
+        $("#" + id).dataTable({
+          "aoColumns": sortables[id],
+          "bPaginate": false,
+          "bLengthChange": false,
+          "bInfo": false,
+          "bFilter": false,
+          "bAutoWidth": false,
+          "fnInitComplete": function () {
+            $(this).parent().jHueTableScroller();
+            if (! $(this).hasClass("skip-extender")) {
+              $(this).jHueTableExtender({
+                hintElement: "#jumpToColumnAlert",
+                fixedHeader: true
+              });
+            }
+          },
+          "oLanguage": {
+            "sEmptyTable": "${_('No data available')}",
+            "sZeroRecords": "${_('No matching records')}"
+          }
+        });
+      }
+      if ($(e.target).attr("href") == "#columnAnalysisTerms") {
+        $("#columnAnalysis .filter").removeClass("hide");
+      }
+      if ($(e.target).attr("href") == "#columnAnalysisStats") {
+        $("#columnAnalysis .filter").addClass("hide");
+      }
     });
 
     $("#import-data-btn").click(function () {
@@ -270,7 +344,27 @@ ${ components.menubar() }
     });
 
     // convert link text to URLs in comment column (Columns tab)
-    hue.text2Url(document.querySelectorAll('.datatables td:last-child'));
+    hue.text2Url(document.querySelectorAll('.sampleTable td:last-child'));
+
+    $('a[data-toggle="tab"]:eq(0)').click();
+
+    $("a[data-column]").on("click", function () {
+      var _link = $(this);
+      var _col = _link.data("column");
+      var statsUrl = "/beeswax/api/table/${database}/${table.name}/stats/" + _col;
+      var refreshUrl = "/beeswax/api/analyze/${database}/${table.name}/" + _col;
+      var termsUrl = "/beeswax/api/table/${database}/${table.name}/terms/" + _col + "/";
+      $("#columnAnalysisStats .content").html("<i class='fa fa-spinner fa-spin'></i>");
+      $("#columnAnalysis").show().css("top", _link.position().top - $("#columnAnalysis").outerHeight() / 2 + _link.outerHeight() / 2).css("left", _link.position().left + _link.outerWidth());
+      showColumnStats(statsUrl, refreshUrl, termsUrl, _col, STATS_PROBLEMS, function () {
+        $("#columnAnalysis").show().css("top", _link.position().top - $("#columnAnalysis").outerHeight() / 2 + _link.outerHeight() / 2).css("left", _link.position().left + _link.outerWidth());
+      });
+    });
+
+    $(document).on("click", "#columnAnalysis .close-popover", function () {
+      $("#columnAnalysis").hide();
+    });
+
   });
 </script>
 

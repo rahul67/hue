@@ -1,9 +1,30 @@
+/*
+ * Licensed to Cloudera, Inc. under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  Cloudera, Inc. licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.cloudera.hue.livy.repl
 
+import java.util.concurrent.TimeUnit
 import javax.servlet.ServletContext
 
-import com.cloudera.hue.livy.repl.python.PythonSession
-import com.cloudera.hue.livy.repl.scala.SparkSession
+import com.cloudera.hue.livy.repl.python.PythonInterpreter
+import com.cloudera.hue.livy.repl.scala.SparkInterpreter
+import com.cloudera.hue.livy.repl.sparkr.SparkRInterpreter
+import com.cloudera.hue.livy.sessions.Starting
 import com.cloudera.hue.livy.{Logging, WebServer}
 import dispatch._
 import org.json4s.jackson.Serialization.write
@@ -18,10 +39,9 @@ import _root_.scala.concurrent.{Await, ExecutionContext}
 object Main extends Logging {
 
   val SESSION_KIND = "livy.repl.session.kind"
-  val PYTHON_SESSION = "python"
   val PYSPARK_SESSION = "pyspark"
-  val SCALA_SESSION = "scala"
   val SPARK_SESSION = "spark"
+  val SPARKR_SESSION = "sparkr"
 
   def main(args: Array[String]): Unit = {
 
@@ -35,14 +55,14 @@ object Main extends Logging {
 
 
     if (args.length != 1) {
-      println("Must specify either `python`/`pyspark`/`scala/`spark` for the session kind")
+      println("Must specify either `pyspark`/`spark`/`sparkr` for the session kind")
       sys.exit(1)
     }
 
-    val session_kind = args(0)
+    val session_kind = args.head
 
     session_kind match {
-      case PYTHON_SESSION | PYSPARK_SESSION | SCALA_SESSION | SPARK_SESSION =>
+      case PYSPARK_SESSION | SPARK_SESSION | SPARKR_SESSION =>
       case _ =>
         println("Unknown session kind: " + session_kind)
         sys.exit(1)
@@ -59,8 +79,10 @@ object Main extends Logging {
 
     try {
       val replUrl = s"http://${server.host}:${server.port}"
-      println(s"Starting livy-repl on $replUrl")
       System.setProperty("livy.repl.url", replUrl)
+
+      println(s"Starting livy-repl on $replUrl")
+      Console.flush()
 
       server.join()
       server.stop()
@@ -79,25 +101,32 @@ class ScalatraBootstrap extends LifeCycle with Logging {
   var session: Session = null
 
   override def init(context: ServletContext): Unit = {
-    session = context.getInitParameter(Main.SESSION_KIND) match {
-      case Main.PYTHON_SESSION => PythonSession.createPySpark()
-      case Main.PYSPARK_SESSION => PythonSession.createPySpark()
-      case Main.SCALA_SESSION => SparkSession.create()
-      case Main.SPARK_SESSION => SparkSession.create()
+    try {
+      val interpreter = context.getInitParameter(Main.SESSION_KIND) match {
+        case Main.PYSPARK_SESSION => PythonInterpreter()
+        case Main.SPARK_SESSION => SparkInterpreter()
+        case Main.SPARKR_SESSION => SparkRInterpreter()
+      }
+
+      session = Session(interpreter)
+
+      context.mount(new WebApp(session), "/*")
+
+      val callbackUrl = Option(System.getProperty("livy.repl.callback-url"))
+        .orElse(sys.env.get("LIVY_CALLBACK_URL"))
+
+      // See if we want to notify someone that we've started on a url
+      callbackUrl.foreach(notifyCallback)
+    } catch {
+      case e: Throwable =>
+        println(f"Exception thrown when initializing server: $e")
+        sys.exit(1)
     }
-
-    context.mount(new WebApp(session), "/*")
-
-    val callbackUrl = Option(System.getProperty("livy.repl.callback-url"))
-      .orElse(sys.env.get("LIVY_CALLBACK_URL"))
-
-    // See if we want to notify someone that we've started on a url
-    callbackUrl.foreach(notifyCallback)
   }
 
   override def destroy(context: ServletContext): Unit = {
     if (session != null) {
-      Await.result(session.close(), Duration.Inf)
+      session.close()
     }
   }
 
@@ -105,7 +134,7 @@ class ScalatraBootstrap extends LifeCycle with Logging {
     info(s"Notifying $callbackUrl that we're up")
 
     Future {
-      session.waitForStateChange(Session.Starting())
+      session.waitForStateChange(Starting(), Duration(30, TimeUnit.SECONDS))
 
       // Wait for our url to be discovered.
       val replUrl = waitForReplUrl()
@@ -118,7 +147,7 @@ class ScalatraBootstrap extends LifeCycle with Logging {
         case _ => System.exit(1)
       }
 
-      Await.result(rep, 10 seconds)
+      Await.result(rep, Duration(10, TimeUnit.SECONDS))
     }
   }
 

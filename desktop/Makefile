@@ -41,14 +41,15 @@ include $(ROOT)/Makefile.vars.priv
 
 APPS := core \
 	libs/hadoop \
-	libs/liboozie \
-	libs/libsaml \
-	libs/librdbms \
-	libs/libopenid \
+	libs/indexer \
 	libs/liboauth \
-	libs/libsolr \
+	libs/liboozie \
+	libs/libopenid \
+	libs/librdbms \
+	libs/libsaml \
 	libs/libsentry \
-	libs/indexer
+	libs/libsolr \
+	libs/libzookeeper
 
 .PHONY: default
 default:: hue syncdb

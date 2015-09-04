@@ -37,7 +37,7 @@ nv.models.growingMultiBar = function() {
     , hideable = false
     , barColor = null // adding the ability to set the color for each rather than the whole group
     , disabled // used in conjunction with barColor to communicate from multiBarHorizontalChart what series are disabled
-    , delay = 1200
+    , delay = 0
     , xDomain
     , yDomain
     , xRange
@@ -99,14 +99,15 @@ nv.models.growingMultiBar = function() {
           var posBase = 0, negBase = 0;
           data.map(function(d) {
             var f = d.values[i]
-            f.size = Math.abs(f.y);
-            if (f.y<0)  {
-              f.y1 = negBase;
-              negBase = negBase - f.size;
-            } else
-            {
-              f.y1 = f.size + posBase;
-              posBase = posBase + f.size;
+            if (typeof f != 'undefined') {
+              f.size = Math.abs(f.y);
+              if (f.y < 0) {
+                f.y1 = negBase;
+                negBase = negBase - f.size;
+              } else {
+                f.y1 = f.size + posBase;
+                posBase = posBase + f.size;
+              }
             }
           });
         });
@@ -201,38 +202,49 @@ nv.models.growingMultiBar = function() {
 
 
       var bars = groups.selectAll('rect.nv-bar')
-          .data(function(d) { return (hideable && !data.length) ? hideable.values : d.values });
+          .data(function(d) { return (hideable && !data.length) ? hideable.values : d.values }).classed('selected', false);
 
       bars.exit().remove();
 
       selectBars = function(selected) {
-        var _pivotField = null;
-        if (!Array.isArray(selected)){
-          _pivotField = selected.field;
-          selected = selected.selected;
-        }
-
-        $(selected).each(function(cnt, item){
-          bars.each(function(d, i) {
-            if (_pivotField != null){
-              if (d.obj.fq_fields == _pivotField && d.obj.fq_values == item){
+        if (selected.rangeValues){
+          $(selected.rangeValues).each(function(cnt, item){
+            bars.each(function(d, i) {
+              if (parseInt(d.x) >= parseInt(item.from) && parseInt(d.x_end) <= parseInt(item.to)) {
                 d3.select(this).classed('selected', true);
               }
-            }
-            else {
-              if (d.x instanceof Date){
-                if (moment(d.x).utc().format("YYYY-MM-DD[T]HH:mm:ss[Z]") == item) {
+            });
+          });
+        }
+        else {
+          var _pivotField = null;
+          if (!Array.isArray(selected)){
+            _pivotField = selected.field;
+            selected = selected.selected;
+          }
+
+          $(selected).each(function(cnt, item){
+            bars.each(function(d, i) {
+              if (_pivotField != null){
+                if ((Array.isArray(_pivotField) ? ko.toJSON(d.obj.fq_fields) == ko.toJSON(_pivotField) : d.obj.fq_fields == _pivotField) && (item.values ? ko.toJSON(d.obj.fq_values) == ko.toJSON(item.values) : d.obj.fq_values == item)){
                   d3.select(this).classed('selected', true);
                 }
               }
               else {
-                if (d.x == item) {
-                  d3.select(this).classed('selected', true);
+                if (d.x instanceof Date){
+                  if (moment(d.x).utc().format("YYYY-MM-DD[T]HH:mm:ss[Z]") == item) {
+                    d3.select(this).classed('selected', true);
+                  }
+                }
+                else {
+                  if (d.x == item) {
+                    d3.select(this).classed('selected', true);
+                  }
                 }
               }
-            }
+            });
           });
-        });
+        }
       };
 
 

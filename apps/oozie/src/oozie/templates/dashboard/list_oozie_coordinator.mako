@@ -16,7 +16,7 @@
 ## limitations under the License.
 
 <%!
-  from desktop.views import commonheader, commonfooter
+  from desktop.views import commonheader, commonfooter, _ko
   from django.utils.translation import ugettext as _
   
   from oozie.conf import ENABLE_V2
@@ -99,7 +99,8 @@ ${ layout.menubar(section='coordinators', dashboard=True) }
                   <div id="rerun-coord-modal" class="modal hide"></div>
                   <button title="${ _('Suspend the coordinator after finishing the current running actions') }" id="suspend-btn"
                      data-url="${ url('oozie:manage_oozie_jobs', job_id=oozie_coordinator.id, action='suspend') }"
-                     data-confirmation-message="${ _('Are you sure you\'d like to suspend this job?') }"
+                     data-confirmation-header="${ _('Are you sure you want to suspend this job?') }"
+                     data-confirmation-footer="normal"
                      class="btn btn-small confirmationModal
                      % if not oozie_coordinator.is_running():
                        hide
@@ -109,7 +110,8 @@ ${ layout.menubar(section='coordinators', dashboard=True) }
                   </button>
                   <button title="${ _('Resume the coordinator') }" id="resume-btn"
                      data-url="${ url('oozie:manage_oozie_jobs', job_id=oozie_coordinator.id, action='resume') }"
-                     data-confirmation-message="${ _('Are you sure you\'d like to resume this job?') }"
+                     data-confirmation-header="${ _('Are you sure you want to resume this job?') }"
+                     data-confirmation-footer="normal"
                      class="btn btn-small confirmationModal
                      % if oozie_coordinator.is_running():
                        hide
@@ -117,9 +119,11 @@ ${ layout.menubar(section='coordinators', dashboard=True) }
                      " style="margin-bottom: 5px">
                     ${ _('Resume') }
                   </button>
-                  <button title="${ _('Edit End Time') }" id="edit-endtime-btn"
+                  <button title="${ _('Update Coordinator Job properties') }" id="edit-coord-btn"
                      data-url="${ url('oozie:manage_oozie_jobs', job_id=oozie_coordinator.id, action='change') }"
-                     data-confirmation-message="${ _('Update End Time') }"
+                     data-message="${ _('Successfully updated Coordinator Job Properties') }"
+                     data-confirmation-header="${ _('Update Coordinator Job Properties') }"
+                     data-confirmation-footer="update"
                      class="btn btn-small confirmationModal
                      % if not oozie_coordinator.is_running():
                        hide
@@ -139,7 +143,8 @@ ${ layout.menubar(section='coordinators', dashboard=True) }
                     href="javascript:void(0)"
                     data-url="${ url('oozie:manage_oozie_jobs', job_id=oozie_coordinator.id, action='kill') }"
                     data-message="${ _('The coordinator was killed!') }"
-                    data-confirmation-message="${ _('Are you sure you\'d like to kill this job?') }" style="margin-bottom: 5px">
+                    data-confirmation-footer="danger"
+                    data-confirmation-header="${ _('Are you sure you want to kill this job?') }" style="margin-bottom: 5px">
                       ${_('Kill')}
                   </button>
                 </li>
@@ -169,30 +174,42 @@ ${ layout.menubar(section='coordinators', dashboard=True) }
 
           <div class="tab-content" style="min-height:200px">
             <div class="tab-pane active" id="calendar">
-              <div class="clearfix" style="margin-bottom: 1em;">
-                <div class="pull-left">
-                  <input type="text" data-bind="textInput: searchFilter, value: searchFilter,  valueUpdate: 'input'" class="input-xlarge search-query" placeholder="${_('Filter results')}">
-                  % if has_job_edition_permission(oozie_coordinator, user):
-                      <button data-bind="enable: selectedActions().length > 0" class="btn btn-primary rerun-btn action-button"
+              <div class="pull-left">
+                <input type="text" data-bind="textInput: searchFilter, value: searchFilter,  valueUpdate: 'input'" class="input-xlarge search-query" placeholder="${_('Filter results')}">
+                % if has_job_edition_permission(oozie_coordinator, user):
+                    <div id="coord-actions" data-bind="enable: selectedActions().length > 0" class="btn-group" style="vertical-align: middle">
+                      <button data-bind="enable: selectedActions().length > 0" class="btn btn-primary rerun-btn"
                          % if oozie_coordinator.is_running() or oozie_coordinator.status in ('KILLED', 'FAILED'):
                            disabled="disabled"
                          % endif
                         data-rerun-url="${ url('oozie:rerun_oozie_coord', job_id=oozie_coordinator.id, app_path=oozie_coordinator.coordJobPath) }">
                         <i class="fa fa-refresh"></i> ${ _('Rerun') }
                       </button>
-                  % endif
-                </div>
-                <span class="btn-group pull-right" style="margin-right: 20px">
-                  <a class="btn btn-status btn-success" data-value="success" data-bind="click: function () { setFilter('succeeded'); }">${ _('Succeeded') }</a>
-                  <a class="btn btn-status btn-warning" data-value="warning" data-bind="click: function () { setFilter('running'); }">${ _('Running') }</a>
-                  <a class="btn btn-status btn-danger disable-feedback" data-value="important" data-bind="click: function () { setFilter('failed'); }">${ _('Failed') }</a>
-                </span>
+                      <button id="trash-btn-caret" class="btn toolbarBtn dropdown-toggle" data-toggle="dropdown"
+                        data-bind="enable: selectedActions().length > 0">
+                        <span class="caret"></span>
+                      </button>
+                      <ul class="dropdown-menu"> <li data-bind="enable: selectedActions().length > 0">
+                          <a href='#' class="ignore-btn confirmationModal" data-url="${ url('oozie:manage_oozie_jobs', job_id=oozie_coordinator.id, action='ignore') }"
+                              data-message="${ _('Successfully ignored selected action(s)') }"
+                              data-confirmation-body="${ _('Are you sure you want to ignore the action(s)?')}"
+                              data-confirmation-footer="normal"
+                              data-confirmation-header="${ _('Note: You can only ignore a FAILED, KILLED or TIMEDOUT action' )}" > ${ _('Ignore') } </a></li>
+                      </ul>
+                    </div>
+                % endif
               </div>
+              <div class="btn-group pull-right" style="margin-right: 20px">
+                <a class="btn btn-status btn-success" data-table="calendar" data-value="SUCCEEDED">${ _('Succeeded') }</a>
+                <a class="btn btn-status btn-warning" data-table="calendar" data-value="RUNNING">${ _('Running') }</a>
+                <a class="btn btn-status btn-danger disable-feedback" data-table="calendar" data-value="ERROR">${ _('Error') }</a>
+              </div>
+              <div class="clearfix"></div>
 
-              <table class="table table-striped table-condensed">
+              <table class="table table-striped table-condensed margin-top-10">
                 <thead>
                 <tr>
-                  <th width="3%"><div data-bind="click: selectAll, css: { 'fa-check': allSelected }" class="hueCheckbox fa"></div></th>
+                  <th width="20"><div data-bind="click: selectAll, css: { 'fa-check': allSelected }" class="hueCheckbox fa"></div></th>
                   <th width="200">${ _('Day') }</th>
                   <th>${ _('Comment') }</th>
                 </tr>
@@ -200,21 +217,12 @@ ${ layout.menubar(section='coordinators', dashboard=True) }
                 <tbody data-bind="template: { name: 'calendarTemplate', foreach: filteredActions}" >
                 </tbody>
                 <tfoot>
-                  <tr>
-                    <td data-bind="visible: !isLoading() && paginate()" colspan="10">
-                      </br>
-                      <div class="alert">
-                        ${ _('There are older actions to be shown:') }
-                        <a class="btn" href="${ oozie_coordinator.get_absolute_url() }?show_all_actions=true">${ _('Expand') }</a>
-                      </div>
-                    </td>
-                  </tr>
                   <tr data-bind="visible: isLoading()">
                     <td colspan="2" class="left">
                       <img src="${ static('desktop/art/spinner.gif') }" />
                     </td>
                   </tr>
-                  <tr data-bind="visible: actions().length == 0 && !isLoading()">
+                  <tr data-bind="visible: filteredActions().length == 0 && !isLoading()">
                     <td colspan="3">
                       <div class="alert">
                         ${ _('There are no actions to be shown.') }
@@ -223,44 +231,60 @@ ${ layout.menubar(section='coordinators', dashboard=True) }
                   </tr>
                 </tfoot>
               </table>
+
+              <div class="pagination dataTables_paginate">
+                <ul>
+                  <li class="prev"><a href="javascript:void(0)" class="btn-actions-pagination" data-value="prev" data-table="calendar"><i class="fa fa-long-arrow-left"></i> ${ _('Previous') }</a></li>
+                  <li class="next"><a href="javascript:void(0)" class="btn-actions-pagination" data-value="next" data-table="calendar">${ _('Next') } <i class="fa fa-long-arrow-right"></i></a></li>
+                </ul>
+              </div>
             </div>
 
             <script id="calendarTemplate" type="text/html">
               <tr data-bind="css: { disabled: url == '' }">
                 <td data-bind="click: handleSelect"><div data-bind="css: { 'fa-check': selected }" class="hueCheckbox fa"></div></td>
                 <td data-bind="css: { disabled: url == '' }">
-                  <a data-bind="attr: {href: url != '' ? url : 'javascript:void(0)', title: url ? '' : '${ _('Workflow not available or instantiated yet') }' }, css: { disabled: url == '' }" data-row-selector="true">
+                  <a data-bind="attr: {href: url != '' ? url : 'javascript:void(0)', title: url ? '' : '${ _ko('Workflow not available or instantiated yet') }' }, css: { disabled: url == '' }" data-row-selector="true">
                     <span data-bind="text: title, attr: {'class': statusClass, 'id': 'date-' + $index()}"></span>
                   </a>
                 </td>
-                <td data-bind="css: { disabled: url == '' }"><em data-bind="visible: (errorMessage == null || errorMessage == '') && (missingDependencies == null || missingDependencies == '') && url == ''">${ _('Workflow not available or instantiated yet') }</em><em data-bind="visible: (errorMessage == null || errorMessage == '') && (missingDependencies == null || missingDependencies == '') && url != ''">${_('-')}</em> <span data-bind="visible: errorMessage != null && errorMessage != '', text: errorMessage"></span> <span data-bind="visible:missingDependencies !='' && missingDependencies != null, text: '${ _('Missing')} ' + missingDependencies"></span></td>
+                <td data-bind="css: { disabled: url == '' }"><em data-bind="visible: (errorMessage == null || errorMessage == '') && (missingDependencies == null || missingDependencies == '') && url == ''">${ _('Workflow not available or instantiated yet') }</em><em data-bind="visible: (errorMessage == null || errorMessage == '') && (missingDependencies == null || missingDependencies == '') && url != ''">${_('-')}</em> <span data-bind="visible: errorMessage != null && errorMessage != '', text: errorMessage"></span> <span data-bind="visible:missingDependencies !='' && missingDependencies != null, text: '${ _ko('Missing')} ' + missingDependencies"></span></td>
               </tr>
             </script>
 
 
             <div class="tab-pane" id="actions">
-              <table class="table table-striped table-condensed" cellpadding="0" cellspacing="0">
+              <div class="pull-left">
+                <input type="text" data-bind="textInput: searchFilter, value: searchFilter,  valueUpdate: 'input'" class="input-xlarge search-query" placeholder="${_('Filter results')}">
+              </div>
+              <div class="btn-group pull-right" style="margin-right: 20px;">
+                <a class="btn btn-status btn-success" data-table="actions" data-value="SUCCEEDED">${ _('Succeeded') }</a>
+                <a class="btn btn-status btn-warning" data-table="actions" data-value="RUNNING">${ _('Running') }</a>
+                <a class="btn btn-status btn-danger disable-feedback" data-table="actions" data-value="ERROR">${ _('Error') }</a>
+              </div>
+              <div class="clearfix"></div>
+              <table class="table table-striped table-condensed margin-top-10" cellpadding="0" cellspacing="0">
                 <thead>
                 <tr>
-                  <th>${ _('Number') }</th>
-                  <th>${ _('Nominal Time') }</th>
+                  <th width="1%">${ _('Number') }</th>
+                  <th width="14%">${ _('Nominal Time') }</th>
 
-                  <th>${ _('Type') }</th>
-                  <th>${ _('Status') }</th>
+                  <th width="5%">${ _('Type') }</th>
+                  <th width="5%">${ _('Status') }</th>
 
-                  <th>${ _('Error Code') }</th>
-                  <th>${ _('Error Message') }</th>
-                  <th>${ _('Missing Dependencies') }</th>
+                  <th width="5%">${ _('Error Code') }</th>
+                  <th width="14%">${ _('Error Message') }</th>
+                  <th width="10%">${ _('Missing Dependencies') }</th>
 
-                  <th>${ _('Created Time') }</th>
-                  <th>${ _('Last Modified') }</th>
+                  <th width="10%">${ _('Created Time') }</th>
+                  <th width="10%">${ _('Last Modified') }</th>
 
-                  <th>${ _('Id') }</th>
-                  <th>${ _('External Id') }</th>
+                  <th width="13%">${ _('Id') }</th>
+                  <th width="13%">${ _('External Id') }</th>
                 </tr>
                 </thead>
 
-                <tbody data-bind="template: {name: 'actionTemplate', foreach: actions}">
+                <tbody data-bind="template: {name: 'actionTemplate', foreach: filteredActions}">
                 </tbody>
 
                 <tfoot>
@@ -269,7 +293,7 @@ ${ layout.menubar(section='coordinators', dashboard=True) }
                     <img src="${ static('desktop/art/spinner.gif') }" />
                   </td>
                 </tr>
-                <tr data-bind="visible: !isLoading() && actions().length == 0">
+                <tr data-bind="visible: !isLoading() && filteredActions().length == 0">
                   <td colspan="11">
                     <div class="alert">
                       ${ _('There are no actions to be shown.') }
@@ -278,6 +302,13 @@ ${ layout.menubar(section='coordinators', dashboard=True) }
                 </tr>
                 </tfoot>
               </table>
+
+              <div class="pagination dataTables_paginate">
+                <ul>
+                  <li class="prev"><a href="javascript:void(0)" class="btn-actions-pagination" data-value="prev" data-table="actions"><i class="fa fa-long-arrow-left"></i> ${ _('Previous') }</a></li>
+                  <li class="next"><a href="javascript:void(0)" class="btn-actions-pagination" data-value="next" data-table="actions">${ _('Next') } <i class="fa fa-long-arrow-right"></i></a></li>
+                </ul>
+              </div>
             </div>
 
             <script id="actionTemplate" type="text/html">
@@ -311,6 +342,16 @@ ${ layout.menubar(section='coordinators', dashboard=True) }
                     <td>${ _('End time') }</td>
                     <td>${ utils.format_time(oozie_coordinator.endTime) }</td>
                   </tr>
+                  % if oozie_coordinator.pauseTime:
+                  <tr>
+                    <td>${ _('Pause time') }</td>
+                    <td>${ utils.format_time(oozie_coordinator.pauseTime) }</td>
+                  </tr>
+                  %endif
+                  <tr>
+                    <td>${ _('Concurrency') }</td>
+                    <td>${ oozie_coordinator.concurrency }</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -320,7 +361,38 @@ ${ layout.menubar(section='coordinators', dashboard=True) }
             </div>
 
             <div class="tab-pane" id="log">
-              <pre></pre>
+              <div data-bind="visible: isLogFilterVisible()" class="margin-bottom-10">
+                <label class="spinedit">
+                  ${ _("Last") }
+                  <input type="text" class="input-medium" style="margin-left: 10px" data-bind="spinedit: logFilterRecentHours, override: { minimum: 0, maximum: 1000, step: 1 }" placeholder="${_('ie. 2')}"/>
+                  ${ _("hours and") }
+                  <input type="text" class="input-medium" style="margin-left: 10px" data-bind="spinedit: logFilterRecentMinutes, override: { minimum: 0, maximum: 59, step: 5 }" placeholder="${_('ie. 30')}"/>
+                  ${ _("minutes") }
+                </label>
+                <label class="spinedit" style="margin-left: 30px">
+                  ${ _("Number of lines") }
+                  <input type="text" class="input-medium" data-bind="spinedit: logFilterLimit" placeholder="${_('ie. 10')}"/>
+                </label>
+                <input type="text" data-bind="clearable: logFilterText, valueUpdate: 'afterkeydown'" class="input-xlarge search-query" placeholder="${_('String to search in logs')}">
+
+                <span class="btn-group" style="float:right;">
+                  <a class="btn log-status btn-success" data-value="DEBUG|INFO|TRACE">${ _('Debug') }</a>
+                  <a class="btn log-status btn-warning" data-value="WARN">${ _('Warning') }</a>
+                  <a class="btn log-status btn-danger disable-feedback" data-value="ERROR|FATAL">${ _('Error') }</a>
+                </span>
+
+                <div class="inline" style="margin: 10px"><a class="pointer" data-bind="click: $root.toggleLogFilterVisible"><i class="fa fa-times"></i></a></div>
+                <div class="clearfix"></div>
+              </div>
+              <div style="position:relative">
+                <div class="spinner-overlay" data-bind="visible: isRefreshingLogs()">
+                  <i class="fa fa-spinner fa-spin"></i>
+                </div>
+                <ul class="pointer unstyled settings-overlay" data-bind="click: $root.toggleLogFilterVisible, visible: !isLogFilterVisible()">
+                  <li><a class="pointer"><i class="fa fa-filter"></i> ${ _("Filter") }</a></li>
+                </ul>
+                <pre></pre>
+              </div>
             </div>
 
             <div class="tab-pane" id="definition">
@@ -377,21 +449,35 @@ ${ layout.menubar(section='coordinators', dashboard=True) }
 <div id="confirmation" class="modal hide">
   <div class="modal-header">
     <a href="#" class="close" data-dismiss="modal">&times;</a>
-    <h3 class="message"></h3>
+    <h3 class="confirmation_header"></h3>
   </div>
-  <div id="update-endtime" class="span10">
-    ${ utils.render_field_no_popover(update_endtime_form['end'], show_label=False) }
+  <div id="update-coord" class="span10">
+    ${ utils.render_field_no_popover(update_coord_form['endTime'], show_label=True) }
+    ${ utils.render_field_no_popover(update_coord_form['pauseTime'], show_label=True) }
+    ${ utils.render_field_no_popover(update_coord_form['clearPauseTime'], show_label=True) }
+    ${ utils.render_field_no_popover(update_coord_form['concurrency'], show_label=True) }
   </div>
-  <div class="modal-footer">
+  <div class="modal-body">
+      <p class="confirmation_body"></p>
+  </div>
+  <div class="modal-footer danger hide">
     <a href="#" class="btn" data-dismiss="modal">${_('No')}</a>
-    <a class="btn btn-danger disable-feedback" href="javascript:void(0);">${_('Yes')}</a>
+    <a class="btn btn-danger btn-confirm disable-feedback" href="javascript:void(0);">${_('Yes')}</a>
+  </div>
+  <div class="modal-footer normal hide">
+    <a href="#" class="btn" data-dismiss="modal">${_('No')}</a>
+    <a class="btn btn-primary btn-confirm disable-feedback" href="javascript:void(0);">${_('Yes')}</a>
+  </div>
+  <div class="modal-footer update hide">
+    <a href="#" class="btn" data-dismiss="modal">${_('Cancel')}</a>
+    <a class="btn btn-primary btn-confirm disable-feedback" href="javascript:void(0);">${_('Update')}</a>
   </div>
 </div>
 
 <div id="rerun-coord-modal" class="modal hide"></div>
 
 <script src="${ static('oozie/js/dashboard-utils.js') }" type="text/javascript" charset="utf-8"></script>
-<script src="${ static('desktop/ext/js/knockout-min.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/ext/js/knockout.min.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/codemirror-3.11.js') }"></script>
 <link rel="stylesheet" href="${ static('desktop/ext/css/codemirror.css') }">
 <script src="${ static('desktop/ext/js/codemirror-xml.js') }"></script>
@@ -404,6 +490,14 @@ ${ layout.menubar(section='coordinators', dashboard=True) }
 <script src="${ static('desktop/ext/js/jquery/plugins/jquery.flot.time.min.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/js/jquery.blueprint.js') }"></script>
 % endif
+
+<link rel="stylesheet" href="${ static('desktop/css/bootstrap-spinedit.css') }">
+<link rel="stylesheet" href="${ static('desktop/css/bootstrap-slider.css') }">
+
+<script src="${ static('desktop/js/bootstrap-spinedit.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/js/bootstrap-slider.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/js/ko.hue-bindings.js') }" type="text/javascript" charset="utf-8"></script>
+
 
 <script>
 
@@ -437,40 +531,68 @@ ${ layout.menubar(section='coordinators', dashboard=True) }
     };
   };
 
-  var RunningCoordinatorActionsModel = function (actions) {
+  var RunningCoordinatorModel = function (actions) {
     var self = this;
-    this.isLoading = ko.observable(true);
 
-    this.actions = ko.observableArray(ko.utils.arrayMap(actions), function (action) {
+    self.isLoading = ko.observable(true);
+
+    self.actions = ko.observableArray(ko.utils.arrayMap(actions), function (action) {
       return new Action(action);
     });
 
-    this.paginate = ko.computed(function(){
-      return self.actions().length >= ${ MAX_COORD_ACTIONS } && ${ "false" if show_all_actions else 'true' | n,unicode };
+    self.allSelected = ko.observable(false);
+
+    self.filter = ko.observableArray([]);
+
+    self.searchFilter = ko.observable("");
+
+    self.isRefreshingLogs = ko.observable(false);
+    self.logFilterRecentHours = ko.observable("");
+    self.logFilterRecentMinutes = ko.observable("");
+    self.logFilterRecent = ko.computed(function () {
+      var _h = self.logFilterRecentHours();
+      var _m = self.logFilterRecentMinutes();
+      return (_h != "" ? _h + "h" : "") + (_h != "" && _m != "" ? ":" : "") +  (_m != "" ? _m + "m" : "");
+    }).extend({ throttle: 500 });
+
+    self.logFilterLimit = ko.observable("5000").extend({ throttle: 500 });
+
+    self.logFilterText = ko.observable("").extend({ throttle: 500 });
+
+    self.logFilterRecent.subscribe(function(){
+      refreshLogs();
     });
 
-    this.allSelected = ko.observable(false);
+    self.logFilterLimit.subscribe(function(){
+      refreshLogs();
+    });
 
-    this.filter = ko.observableArray([]);
+    self.logFilterText.subscribe(function(){
+      refreshLogs();
+    });
 
-    this.searchFilter = ko.observable('');
+    self.isLogFilterVisible = ko.observable(false);
 
-    this.select = function (filter) {
-      ko.utils.arrayFilter(self.actions(), function(action) {
+    self.toggleLogFilterVisible = function () {
+      self.isLogFilterVisible(!self.isLogFilterVisible());
+    };
+
+    self.select = function (filter) {
+      ko.utils.arrayFilter(self.actions(), function (action) {
         if (action.status.toLowerCase() === filter) {
           action.selected(true);
         }
       });
     };
 
-    this.clearAllSelections = function () {
+    self.clearAllSelections = function () {
       ko.utils.arrayFilter(self.actions(), function (action) {
         action.selected(false);
       });
       self.allSelected(false);
     };
 
-    this.clearSelections = function (filter) {
+    self.clearSelections = function (filter) {
       ko.utils.arrayFilter(self.actions(), function (action) {
         if (action.status.toLowerCase() === filter) {
           action.selected(false);
@@ -479,23 +601,23 @@ ${ layout.menubar(section='coordinators', dashboard=True) }
       self.allSelected(false);
     };
 
-    this.selectAll = function () {
+    self.selectAll = function () {
       var regexp;
 
-      if (! Array.isArray(self.filter())) {
+      if (!Array.isArray(self.filter())) {
         ko.utils.arrayForEach(self.actions(), function (action) {
           regexp = new RegExp(self.filter());
 
-          self.allSelected(! self.allSelected());
+          self.allSelected(!self.allSelected());
 
           if (regexp.test(action.title.toLowerCase())) {
-            action.selected(! action.selected());
+            action.selected(!action.selected());
           }
         });
         return true;
       }
 
-      self.allSelected(! self.allSelected());
+      self.allSelected(!self.allSelected());
 
       ko.utils.arrayForEach(self.actions(), function (action) {
         if (action.id) {
@@ -505,7 +627,7 @@ ${ layout.menubar(section='coordinators', dashboard=True) }
       return true;
     };
 
-    this.selectedActions = ko.computed(function () {
+    self.selectedActions = ko.computed(function () {
       var actionlist = [];
 
       ko.utils.arrayFilter(self.actions(), function (action) {
@@ -516,7 +638,7 @@ ${ layout.menubar(section='coordinators', dashboard=True) }
       return actionlist;
     });
 
-    this.searchFilter.subscribe(function () {
+    self.searchFilter.subscribe(function () {
       if (self.searchFilter().length === 0) {
         self.filter([]);
       } else {
@@ -530,32 +652,11 @@ ${ layout.menubar(section='coordinators', dashboard=True) }
       }
     });
 
-    this.setFilter = function (filter) {
-      if (! Array.isArray(self.filter())) {
-        self.filter([]);
-      }
-
-      // checks to see if a button is toggled
-      if ($.inArray(filter, self.filter()) !== -1) {
-        // remove if already in array due to toggling of filter
-        self.filter.splice(self.filter.indexOf(filter), 1);
-        self.clearSelections(filter);
-        self.allSelected(false);
-      } else {
-        self.filter.push(filter)
-        self.select(filter);
-      }
-
-      if (self.selectedActions().length === self.actions().length) {
-        self.allSelected(true);
-      }
-    };
-
-    this.filteredActions = ko.computed(function () {
+    self.filteredActions = ko.computed(function () {
       var filter = self.filter(),
-        actions = [],
-        regexp,
-        data;
+          actions = [],
+          regexp,
+          data;
 
       if (self.filter().length === 0) {
         return self.actions();
@@ -580,7 +681,7 @@ ${ layout.menubar(section='coordinators', dashboard=True) }
     });
   };
 
-  var viewModel = new RunningCoordinatorActionsModel([]);
+  var viewModel = new RunningCoordinatorModel([]);
   ko.applyBindings(viewModel);
 
   var CHART_LABELS = {
@@ -591,7 +692,9 @@ ${ layout.menubar(section='coordinators', dashboard=True) }
     ACTUAL_END: "${_('Actual End')}",
     TOOLTIP_ADDON: "${_('click for the SLA dashboard')}"
   }
-  var slaTable;
+  var slaTable, refreshViewTimer, refreshLogs;
+  var PAGE_SIZE = 50;
+  var actionTableOffset = 1;
 
   $(document).ready(function(){
     $("a[data-row-selector='true']").jHueRowSelector();
@@ -645,86 +748,181 @@ ${ layout.menubar(section='coordinators', dashboard=True) }
       % endif
     });
 
-    $(".confirmationModal").click(function(){
+    $("a.btn-status").click(function () {
+      var val = $(this).data("value")
+      var btnCalendar = $("a.btn-status[data-table='calendar'][data-value='"+ val + "']");
+      var btnAction = $("a.btn-status[data-table='actions'][data-value='"+ val + "']");
+
+      refreshActionsPagination();
+      btnCalendar.toggleClass("active");
+      btnAction.toggleClass("active");
+      refreshView();
+    });
+
+    $("a.log-status").click(function () {
+      var val = $(this).data("value")
+      var btn = $("a.log-status[data-value='"+ val + "']");
+
+      btn.toggleClass("active");
+      refreshLogs();
+    });
+
+    $("a.btn-actions-pagination").on("click", function () {
+      if (!$(this).parent().hasClass("disabled")) {
+        var _additionalOffset = 0;
+        if ($(this).data("value") == "prev") {
+          actionTableOffset -= PAGE_SIZE;
+        }
+        else {
+          actionTableOffset += PAGE_SIZE;
+        }
+        refreshView();
+      }
+    });
+
+    $(".confirmationModal").click(function () {
       var _this = $(this);
-      $("#confirmation .message").text(_this.attr("data-confirmation-message"));
+      $("#confirmation .confirmation_header").text(_this.attr("data-confirmation-header"));
+      if (_this.hasClass("ignore-btn")) {
+        $("#confirmation .confirmation_body").text(_this.attr("data-confirmation-body"));
+      }
+      $("#confirmation .modal-footer:not(." + _this.attr("data-confirmation-footer") + ")").addClass("hide");
+      $("#confirmation .modal-footer." + _this.attr("data-confirmation-footer")).removeClass("hide");
       $("#confirmation").modal("show");
 
-      if (_this.attr("id") == "edit-endtime-btn") {
-        $("#update-endtime").show();
+      if (_this.attr("id") == "edit-coord-btn") {
+        $("#update-coord").show();
       } else {
-        $("#update-endtime").hide();
+        $("#update-coord").hide();
       }
 
-      $("#confirmation a.btn-danger").click(function() {
+      $("#confirmation a.btn-confirm").unbind();
+      $("#confirmation a.btn-confirm").click(function () {
         _this.trigger('confirmation');
         $(this).attr("data-loading-text", $(this).text() + " ...");
         $(this).button("loading");
       });
     });
 
-    $(".confirmationModal").bind('confirmation', function() {
+    $(".confirmationModal").bind('confirmation', function () {
       var _this = this;
       var IN_DATETIME_FORMAT = "MM/DD/YYYY hh:mm A";
       var OUT_DATETIME_FORMAT = "YYYY-MM-DD[T]HH:mm[Z]";
 
       var params = { 'notification': $(_this).attr("data-message") };
-      if ($(this).attr("id") == "edit-endtime-btn") {
-        params['end_time'] = moment($("input[name='end_0']").val() + " " + $("input[name='end_1']").val(),
-                                        IN_DATETIME_FORMAT).format(OUT_DATETIME_FORMAT);
+      if ($(this).attr("id") == "edit-coord-btn") {
+        params['end_time'] = moment($("input[name='endTime_0']").val() + " " + $("input[name='endTime_1']").val(),
+            IN_DATETIME_FORMAT).format(OUT_DATETIME_FORMAT);
+        if ($("input[name='pauseTime_0']").val() && $("input[name='pauseTime_1']").val()) {
+          params['pause_time'] = moment($("input[name='pauseTime_0']").val() + " " + $("input[name='pauseTime_1']").val(),
+                                            IN_DATETIME_FORMAT).format(OUT_DATETIME_FORMAT);
+        } else {
+          params['pause_time'] = ''
+        }
+        params['clear_pause_time'] = $("input[name='clearPauseTime']").is(':checked')
+        params['concurrency'] = $("input[name='concurrency']").val()
+      }
+      else if ($(this).hasClass("ignore-btn")) {
+        params['actions'] = viewModel.selectedActions().join(' ');
       }
 
       $.post($(this).attr("data-url"), params,
-        function(response) {
-          if (response['status'] != 0) {
-            $(document).trigger("error", "${ _('Problem: ') }" + response['data']);
-            $("#confirmation a.btn-danger").button("reset");
-          } else {
-            window.location.reload();
+          function (response) {
+            if (response['status'] != 0) {
+              $(document).trigger("error", "${ _('Problem: ') }" + response['data']);
+              $("#confirmation a.btn-confirm").button("reset");
+              $("#confirmation").modal("hide");
+            } else {
+              window.location.reload();
+            }
           }
-        }
       );
       return false;
     });
 
-    $("#suspend-btn").bind('confirmation', function() {
+    $("#suspend-btn").bind('confirmation', function () {
       var _this = this;
       $.post($(this).data("url"),
-        { 'notification': $(this).data("message") },
-        function(response) {
-          if (response['status'] != 0) {
-            $(document).trigger("error", "${ _('Error: ') }" + response['data']);
-            $("#confirmation a.btn-danger").button("reset");
-          } else {
-            window.location.reload();
+          { 'notification': $(this).data("message") },
+          function (response) {
+            if (response['status'] != 0) {
+              $(document).trigger("error", "${ _('Error: ') }" + response['data']);
+              $("#confirmation a.btn-confirm").button("reset");
+            } else {
+              window.location.reload();
+            }
           }
-        }
       );
       return false;
     });
 
-    $('#rerun-btn, .rerun-btn').click(function() {
+    $('#rerun-btn, .rerun-btn').click(function () {
       var _action = $(this).data("rerun-url");
 
-      $.get(_action, function(response) {
+      $.get(_action, function (response) {
         $('#rerun-coord-modal').html(response);
         $('#rerun-coord-modal').modal('show');
       });
     });
 
-    resizeLogs();
-    refreshView();
-    refreshLogs();
+    function refreshActionsPagination() {
+      actionTableOffset = 1;
+    }
+
+    function getFilteredStatuses(type) {
+      var selectedStatuses = '';
+      var btnStatuses = [];
+      $.each($("a.btn-status.active[data-table='calendar']"), function () {
+        val = $(this).data('value');
+        if (val == 'SUCCEEDED') {
+          btnStatuses = btnStatuses.concat(['SUCCEEDED']);
+        } else if (val == 'RUNNING') {
+          btnStatuses = btnStatuses.concat(['RUNNING', 'READY', 'SUBMITTED', 'SUSPENDED', 'WAITING']);
+        } else if (val == 'ERROR') {
+          btnStatuses = btnStatuses.concat(['KILLED', 'FAILED', 'TIMEDOUT', 'IGNORED', 'SKIPPED']);
+        }
+      });
+
+      $.each(btnStatuses, function (iStatus, status) {
+        selectedStatuses += '&status=' + status;
+      });
+      return selectedStatuses;
+    }
+
+    function getLogLevels() {
+      var logStatuses = '';
+      $.each($("a.log-status.active"), function () {
+        val = $(this).data('value');
+        if (logStatuses == '') {
+          logStatuses = val;
+        } else {
+          logStatuses += '|' + val;
+        }
+      });
+
+      return logStatuses;
+    }
+
+    function getLogFilterParams() {
+      return "?format=json" +
+             "&recent=" + viewModel.logFilterRecent() +
+             "&limit=" + viewModel.logFilterLimit() +
+             "&loglevel=" + getLogLevels() +
+             "&text=" + viewModel.logFilterText();
+    }
 
     var logsAtEnd = true;
-    function refreshLogs() {
-      $.getJSON("${ url('oozie:get_oozie_job_log', job_id=oozie_coordinator.id) }", function (data) {
+    refreshLogs = function () {
+      window.clearTimeout(refreshLogs);
+      viewModel.isRefreshingLogs(true);
+      $.getJSON("${ url('oozie:get_oozie_job_log', job_id=oozie_coordinator.id) }" + getLogFilterParams(), function (data) {
         var _logsEl = $("#log pre");
         _logsEl.text(data.log);
 
         if (logsAtEnd) {
           _logsEl.scrollTop(_logsEl[0].scrollHeight - _logsEl.height());
         }
+        viewModel.isRefreshingLogs(false);
         if (data.status != "RUNNING" && data.status != "PREP"){
           return;
         }
@@ -732,14 +930,58 @@ ${ layout.menubar(section='coordinators', dashboard=True) }
       });
     }
 
+    resizeLogs();
+    refreshView();
+    refreshLogs();
+
+    function refreshActionPaginationButtons(totalJobs) {
+      var prevBtnActions = $("a.btn-actions-pagination[data-table='actions'][data-value='prev']");
+      var nextBtnActions = $("a.btn-actions-pagination[data-table='actions'][data-value='next']");
+      var prevBtnCalendar = $("a.btn-actions-pagination[data-table='calendar'][data-value='prev']");
+      var nextBtnCalendar = $("a.btn-actions-pagination[data-table='calendar'][data-value='next']");
+
+      if (actionTableOffset == 1 || !totalJobs) {
+        prevBtnActions.parent().addClass("disabled");
+        prevBtnCalendar.parent().addClass("disabled");
+      }
+      else {
+        prevBtnActions.parent().removeClass("disabled");
+        prevBtnCalendar.parent().removeClass("disabled");
+      }
+      if (totalJobs < (actionTableOffset + PAGE_SIZE) || !totalJobs) {
+        nextBtnActions.parent().addClass("disabled");
+        nextBtnCalendar.parent().addClass("disabled");
+      }
+      else if (totalJobs >= actionTableOffset + PAGE_SIZE) {
+        nextBtnActions.parent().removeClass("disabled");
+        nextBtnCalendar.parent().removeClass("disabled");
+      }
+    }
+
     function refreshView() {
-      $.getJSON("${ oozie_coordinator.get_absolute_url(oozie_bundle=oozie_bundle, format='json') }" + "${ "&show_all_actions=true" if show_all_actions else '' | n,unicode }", function (data) {
+      window.clearTimeout(refreshViewTimer);
+      $.getJSON("${ oozie_coordinator.get_absolute_url(oozie_bundle=oozie_bundle, format='json') }" + "&offset=" + actionTableOffset + getFilteredStatuses(), function (data) {
         viewModel.isLoading(false);
+
+        // Getting selected status from previous action list
+        updatedActionList = [];
         if (data != null && data.actions){
-          viewModel.actions(ko.utils.arrayMap(data.actions, function (action) {
-            return new Action(action);
-          }));
+          var prevActions = viewModel.actions();
+          $(data.actions).each(function (iAction, action) {
+            var actionItem = new Action(action);
+            $(prevActions).each(function (iPrev, prev) {
+              if (prev.id == actionItem.id) {
+                actionItem.selected(prev.selected());
+              }
+            });
+            updatedActionList.push(actionItem);
+          });
         }
+        viewModel.actions(updatedActionList);
+
+        // Refresh actions pagination
+        totalActions = data.total_actions;
+        refreshActionPaginationButtons(totalActions);
 
         $("#status span").attr("class", "label").addClass(getStatusClass(data.status)).text(data.status);
 
@@ -774,7 +1016,8 @@ ${ layout.menubar(section='coordinators', dashboard=True) }
         if (data.status != "RUNNING" && data.status != "PREP"){
           return;
         }
-        window.setTimeout(refreshView, 5000);
+
+        refreshViewTimer = window.setTimeout(refreshView, 5000);
       });
     }
 

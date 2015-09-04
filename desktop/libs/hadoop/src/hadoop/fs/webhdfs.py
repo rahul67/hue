@@ -34,7 +34,7 @@ from hadoop.fs.hadoopfs import Hdfs
 from hadoop.fs.exceptions import WebHdfsException
 from hadoop.fs.webhdfs_types import WebHdfsStat, WebHdfsContentSummary
 from hadoop.conf import UPLOAD_CHUNK_SIZE
-from hadoop.hdfs_site import get_nn_sentry_prefixes, get_umask_mode
+from hadoop.hdfs_site import get_nn_sentry_prefixes, get_umask_mode, get_supergroup
 
 import hadoop.conf
 import desktop.conf
@@ -61,7 +61,8 @@ class WebHdfs(Hdfs):
                security_enabled=False,
                ssl_cert_ca_verify=True,
                temp_dir="/tmp",
-               umask=01022):
+               umask=01022,
+               hdfs_supergroup=None):
     self._url = url
     self._superuser = hdfs_superuser
     self._security_enabled = security_enabled
@@ -70,6 +71,7 @@ class WebHdfs(Hdfs):
     self._umask = umask
     self._fs_defaultfs = fs_defaultfs
     self._logical_name = logical_name
+    self._supergroup = hdfs_supergroup
 
     self._client = self._make_client(url, security_enabled, ssl_cert_ca_verify)
     self._root = resource.Resource(self._client)
@@ -89,7 +91,8 @@ class WebHdfs(Hdfs):
                security_enabled=hdfs_config.SECURITY_ENABLED.get(),
                ssl_cert_ca_verify=hdfs_config.SSL_CERT_CA_VERIFY.get(),
                temp_dir=hdfs_config.TEMP_DIR.get(),
-               umask=get_umask_mode())
+               umask=get_umask_mode(),
+               hdfs_supergroup=get_supergroup())
 
   def __str__(self):
     return "WebHdfs at %s" % self._url
@@ -114,7 +117,7 @@ class WebHdfs(Hdfs):
 
   @classmethod
   def is_sentry_managed(cls, path):
-    prefixes = get_nn_sentry_prefixes().split(',')
+    prefixes = get_nn_sentry_prefixes()
 
     return any([path == p or path.startswith(p + '/') for p in prefixes if p])
 
@@ -125,6 +128,10 @@ class WebHdfs(Hdfs):
   @property
   def umask(self):
     return self._umask
+
+  @property
+  def supergroup(self):
+    return self._supergroup
 
   @property
   def security_enabled(self):
@@ -702,6 +709,10 @@ class WebHdfs(Hdfs):
 
     # Now talk to the real thing. The redirect url already includes the params.
     client = self._make_client(next_url, self.security_enabled, self.ssl_cert_ca_verify)
+
+    # Make sure to reuse the session in order to preserve the Kerberos cookies.
+    client._session = self._client._session
+
     headers = {'Content-Type': 'application/octet-stream'}
     return resource.Resource(client).invoke(method, data=data, headers=headers)
 
@@ -858,7 +869,7 @@ def test_fs_configuration(fs_config):
   try:
     statbuf = fs.stats('/')
     if statbuf.user != DEFAULT_HDFS_SUPERUSER:
-      return [(fs_config.WEBHDFS_URL, _("Filesystem root '/' should be owned by 'hdfs'"))]
+      return [(fs_config.WEBHDFS_URL, _("Filesystem root '/' should be owned by '%s'") % DEFAULT_HDFS_SUPERUSER)]
   except Exception, ex:
     LOG.info("%s -- Validation error: %s" % (fs, ex))
     return [(fs_config.WEBHDFS_URL, _('Failed to access filesystem root'))]
@@ -869,8 +880,7 @@ def test_fs_configuration(fs_config):
     fs.create(tmpname)
   except Exception, ex:
     LOG.info("%s -- Validation error: %s" % (fs, ex))
-    return [(fs_config.WEBHDFS_URL,
-            _('Failed to create temporary file "%s"') % tmpname)]
+    return [(fs_config.WEBHDFS_URL, _('Failed to create temporary file "%s"') % tmpname)]
 
   # Check superuser has super power
   try:
@@ -880,13 +890,12 @@ def test_fs_configuration(fs_config):
       LOG.info("%s -- Validation error: %s" % (fs, ex))
       return [(fs_config.WEBHDFS_URL,
               'Failed to chown file. Please make sure that the filesystem root '
-              'is owned by the cluster superuser ("hdfs" in most cases).')]
+              'is owned by the cluster superuser "%s".') % DEFAULT_HDFS_SUPERUSER]
   finally:
     try:
       fs.remove(tmpname)
     except Exception, ex:
       LOG.error("Failed to remove '%s': %s" % (tmpname, ex))
-      return [(fs_config.WEBHDFS_URL,
-              _('Failed to remove temporary file "%s"') % tmpname)]
+      return [(fs_config.WEBHDFS_URL, _('Failed to remove temporary file "%s"') % tmpname)]
 
-  return [ ]
+  return []

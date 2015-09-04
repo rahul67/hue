@@ -23,6 +23,7 @@
 
 <%!
   from django.utils.translation import ugettext as _
+  from desktop.views import _ko
 %>
 <%namespace name="utils" file="../utils.inc.mako" />
 
@@ -278,13 +279,13 @@
     <div class="big-icon" data-bind="visible: ! $root.isEditing()"><i class="fa fa-magic"></i></div>
 
     <div data-bind="visible: $root.isEditing" style="padding: 10px">
-      <a class="custom-popover pull-right" href="javascript:void(0)" target="_blank" data-trigger="click" data-toggle="popover" data-placement="right" rel="popover"
+      <a class="custom-popover pull-right" href="javascript:void(0)" data-trigger="click" data-toggle="popover" data-placement="right" rel="popover"
         data-html="true" data-content="<strong>${ _('Examples of predicates:') }</strong><br/>
                 <br/>${'${'} fs:fileSize(secondjobOutputDir) gt 10 * GB }
                 <br/>
                 ${"${"} hadoop:counters('secondjob')[RECORDS][REDUCE_OUT] lt 1000000 }
                 <br/>
-                <a href='http://oozie.apache.org/docs/4.1.0/WorkflowFunctionalSpec.html#a4.2_Expression_Language_Functions'>${ _('Click for more') }</a>">
+                <a href='http://oozie.apache.org/docs/4.1.0/WorkflowFunctionalSpec.html#a4.2_Expression_Language_Functions' target='_blank'>${ _('Click for more') }</a>">
           <i class="fa fa-question-circle" title="${ _('Click for more info') }"></i>
       </a>
       <ul data-bind="foreach: children" class="unstyled">
@@ -329,7 +330,7 @@
 <script type="text/html" id="start-widget">
   <!-- ko if: $root.workflow.getNodeById(id()) -->
   <div class="row-fluid" data-bind="with: $root.workflow.getNodeById(id())" style="min-height: 40px;">
-    <div class="big-icon" title="${ _('It is where we start!') }"><i class="fa fa-flag-checkered"></i></div>
+    <div class="big-icon" title="${ _('It is where we start!') }"><i class="fa fa-dot-circle-o"></i></div>
   </div>
   <!-- /ko -->
 </script>
@@ -338,7 +339,7 @@
 <script type="text/html" id="end-widget">
   <!-- ko if: $root.workflow.getNodeById(id()) -->
   <div class="row-fluid" data-bind="with: $root.workflow.getNodeById(id())" style="min-height: 40px">
-    <div class="big-icon" title="${ _('It is where we successfully finish!') }"><i class="fa fa-dot-circle-o"></i></div>
+    <div class="big-icon" title="${ _('It is where we successfully finish!') }"><i class="fa fa-flag-checkered"></i></div>
   </div>
   <!-- /ko -->
 </script>
@@ -351,7 +352,7 @@
       <li>
         <div style="display: inline-block; width: 60px" data-bind="text: type"></div>
         <input type="text" class="filechooser-input input-xlarge"
-            data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, value: value, attr: { placeholder: $root.workflow_properties.prepares.help_text }"/>
+            data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, value: value, attr: { placeholder: $root.workflow_properties.prepares.help_text }"  validate="nonempty"/>
         <a href="#" data-bind="click: function(){ $parent.properties.prepares.remove(this); $(document).trigger('drawArrows') }">
           <i class="fa fa-minus"></i>
         </a>
@@ -366,7 +367,7 @@
 
     <!-- ko if: properties.job_xml -->
       <h6>${ _('Job XML') }</h6>
-      <input type="text" class="input-xlarge filechooser-input" data-bind="filechooser: properties.job_xml, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: properties.job_xml, attr: { placeholder: $root.workflow_properties.job_xml.help_text }"/>
+      <input type="text" class="input-xlarge filechooser-input" data-bind="filechooser: properties.job_xml, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: properties.job_xml, attr: { placeholder: $root.workflow_properties.job_xml.help_text }" validate="nonempty"/>
     <!-- /ko -->
 
     <h6>
@@ -377,7 +378,7 @@
     <ul data-bind="visible: properties.job_properties().length > 0, foreach: properties.job_properties" class="unstyled">
       <li>
         <input type="text" data-bind="value: name" placeholder="${ _('name, e.g. mapred.job.queue.name') }"/>
-        <input type="text" class="filechooser-input input-xlarge" data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, value: value, attr: { placeholder: $root.workflow_properties.job_properties.help_text }"/>
+        <input type="text" class="filechooser-input input-xlarge" data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, value: value, attr: { placeholder: $root.workflow_properties.job_properties.help_text }" validate="nonempty"/>
         <a href="#" data-bind="click: function(){ $parent.properties.job_properties.remove(this); $(document).trigger('drawArrows') }">
           <i class="fa fa-minus"></i>
         </a>
@@ -393,7 +394,7 @@
     </h6>
     <ul data-bind="visible: properties.archives().length > 0, foreach: properties.archives" class="unstyled">
       <li>
-        <input type="text" class="filechooser-input input-xlarge" data-bind="filechooser: name(), filechooserFilter: 'zip,tar,tgz,tar.gz', filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: name, value: name, attr: { placeholder: $root.workflow_properties.archives.help_text }"/>
+        <input type="text" class="filechooser-input input-xlarge" data-bind="filechooser: name(), filechooserFilter: 'zip,tar,tgz,tar.gz,jar', filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: name, value: name, attr: { placeholder: $root.workflow_properties.archives.help_text }" validate="nonempty"/>
         <span data-bind='template: { name: "common-fs-link", data: { path: name(), with_label: false} }'></span>
         <a href="#" data-bind="click: function(){ $parent.properties.archives.remove(this); $(document).trigger('drawArrows') }">
           <i class="fa fa-minus"></i>
@@ -402,6 +403,32 @@
     </ul>
     <em data-bind="visible: properties.archives().length == 0">${ _('No archives defined.') }</em>
     <!-- /ko -->
+
+
+    <h6>${ _('Retry ') }</h6>
+    <a class="pointer" data-bind="click: function(){ properties.retry_max.push(ko.mapping.fromJS({'value': ''})); $(document).trigger('drawArrows') }, visible: properties.retry_max().length < 1">
+      ${ _('Max') } <i class="fa fa-plus"></i>
+    </a>
+    <a class="pointer" data-bind="click: function(){ properties.retry_interval.push(ko.mapping.fromJS({'value': ''})); $(document).trigger('drawArrows') }, visible: properties.retry_interval().length < 1">
+      ${ _('Interval') } <i class="fa fa-plus"></i>
+    </a>
+
+    <ul data-bind="visible: properties.retry_max().length > 0, foreach: properties.retry_max" class="unstyled">
+      <li>
+        ${ _('Max') } <input type="number" data-bind="value: value, attr: { placeholder: $root.workflow_properties.retry_max.help_text }"/>
+        <a href="#" data-bind="click: function(){ $parent.properties.retry_max.remove(this); $(document).trigger('drawArrows') }">
+          <i class="fa fa-minus"></i>
+        </a>
+      </li>
+    </ul>
+    <ul data-bind="visible: properties.retry_interval().length > 0, foreach: properties.retry_interval" class="unstyled">
+      <li>
+        ${ _('Interval') } <input type="number" class="small" data-bind="value: value, attr: { placeholder: $root.workflow_properties.retry_interval.help_text }"/>
+        <a href="#" data-bind="click: function(){ $parent.properties.retry_interval.remove(this); $(document).trigger('drawArrows') }">
+          <i class="fa fa-minus"></i>
+        </a>
+      </li>
+    </ul>
   </div>
 </script>
 
@@ -414,7 +441,7 @@
   </h6>
   <ul class="unstyled" data-bind="visible: properties.arguments().length > 0, foreach: properties.arguments">
     <li>
-      <input type="text" class="input-medium" data-bind="value: value, attr: { placeholder: $root.workflow_properties.arguments.help_text }"/>
+      <input type="text" class="input-medium" data-bind="value: value, attr: { placeholder: $root.workflow_properties.arguments.help_text }" validate="nonempty"/>
       <a href="#" data-bind="click: function(){ $parent.properties.arguments.remove(this); $(document).trigger('drawArrows') }">
         <i class="fa fa-minus"></i>
       </a>
@@ -432,7 +459,7 @@
   </h6>
   <ul class="unstyled" data-bind="visible: properties.arguments().length > 0, foreach: properties.arguments">
     <li style="margin-bottom: 3px">
-      <input type="text" class="span11" data-bind="value: value, attr: { placeholder: $root.workflow_properties.arguments.help_text }"/>
+      <input type="text" class="span11" data-bind="value: value, attr: { placeholder: $root.workflow_properties.arguments.help_text }" validate="nonempty"/>
       <a href="#" data-bind="click: function(){ $parent.properties.arguments.remove(this); $(document).trigger('drawArrows') }">
         <i class="fa fa-minus"></i>
       </a>
@@ -449,7 +476,7 @@
   </h6>
   <ul class="unstyled" data-bind="foreach: properties.files">
     <li style="margin-bottom: 3px">
-      <input type="text" class="filechooser-input" data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value"/>
+      <input type="text" class="filechooser-input" data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value" validate="nonempty"/>
       <span data-bind='template: { name: "common-fs-link", data: { path: value(), with_label: false} }'></span>
       <a href="#" data-bind="click: function(){ $parent.properties.files.remove(this); $(document).trigger('drawArrows') }">
         <i class="fa fa-minus"></i>
@@ -467,7 +494,7 @@
   </h6>
   <ul class="unstyled" data-bind="foreach: properties.parameters">
     <li style="margin-bottom: 3px">
-      <input type="text" class="filechooser-input seventy" data-bind="value: value, filechooser: value, filechooserOptions: globalFilechooserOptions, filechooserPrefixSeparator: '=', hdfsAutocomplete: value, attr: { placeholder: ' ${ _("Fill me up!") }' }, typeahead: { target: value, source: $parent.actionParametersUI, sourceSuffix: '=', triggerOnFocus: true }"/>
+      <input type="text" class="filechooser-input seventy" data-bind="value: value, filechooser: value, filechooserOptions: globalFilechooserOptions, filechooserPrefixSeparator: '=', hdfsAutocomplete: value, attr: { placeholder: ' ${ _ko("Fill me up!") }' }, typeahead: { target: value, source: $parent.actionParametersUI, sourceSuffix: '=', triggerOnFocus: true }"  validate="nonempty"/>
       <span data-bind='template: { name: "param-fs-link", data: {path: value()} }'></span>
       <a href="#" data-bind="click: function(){ $parent.properties.parameters.remove(this); $(document).trigger('drawArrows') }">
         <i class="fa fa-minus"></i>
@@ -479,26 +506,33 @@
 
 <script type="text/html" id="common-action-transition">
   <!-- ko if: children().length == 2 -->
-  OK -->
+  <div>
+  OK <i class="fa fa-long-arrow-right"></i>
   <select data-bind="options: $root.workflow.nodeIds,
       optionsText: function(item) {return $root.workflow.nodeNamesMapping()[item]; },
       value: children()[0]['to']
       ">
   </select>
-  <br/>
-  KO -->
+  </div>
+  <div class="margin-top-10">
+  KO <i class="fa fa-long-arrow-right"></i>
   <select data-bind="options: $root.workflow.nodeIds,
      optionsText: function(item) {return $root.workflow.nodeNamesMapping()[item]; },
    value: children()[1]['error']
      ">
   </select>
+  </div>
   <!-- /ko -->
 </script>
 
 
 <script type="text/html" id="common-action-credentials">
   <em data-bind="visible: $root.credentials() == null || $root.credentials().length == 0">${ _('No available credentials.') }</em>
-  <select data-bind="visible: $root.credentials() != null && $root.credentials().length > 0, options: $root.credentials, selectedOptions: properties.credentials" size="5" multiple="true"></select>
+  <ul data-bind="visible: $root.credentials() != null && $root.credentials().length > 0, foreach: $root.credentials" class="unstyled">
+    <li>
+      <label class="checkbox"><input type="checkbox" data-bind="checkedValue: $data, checked: $parent.properties.credentials" /> <span data-bind="text: $data"></span></label>
+    </li>
+  </ul>
 
   <em data-bind="visible: properties.credentials && properties.credentials.indexOf('hbase') != -1">
     ${ _('Requires hbase-site.xml in job path') }
@@ -516,13 +550,13 @@
 <script type="text/html" id="common-fs-link">
 <!-- ko if: $data.path.length > 0 -->
   <!-- ko if: with_label -->
-    <a data-bind="attr: {href: '/filebrowser/view' + ($data.path[0] != '/' ? $root.workflow.properties.deployment_dir() + '/' : '') + $data.path , title: '${ _('Open') } '+ $data.path }" target="_blank">
+    <a data-bind="attr: {href: '/filebrowser/view=' + ($data.path[0] != '/' ? $root.workflow.properties.deployment_dir() + '/' : '') + $data.path , title: '${ _ko('Open') } '+ $data.path }" target="_blank">
       <span data-bind="text: $data.path.lastIndexOf('/') == $data.path.length - 1 ? $data.path : $data.path.split('/').pop()"></span>
     </a>
   <!-- /ko -->
 
    <!-- ko if: ! with_label -->
-     <a data-bind="attr: {href: '/filebrowser/view' + ($data.path[0] != '/' ? $root.workflow.properties.deployment_dir() + '/' : '') + $data.path }" target="_blank" title="${ _('Open') }">
+     <a data-bind="attr: {href: '/filebrowser/view=' + ($data.path[0] != '/' ? $root.workflow.properties.deployment_dir() + '/' : '') + $data.path }" target="_blank" title="${ _('Open') }">
        <i class="fa fa-external-link-square"></i>
      </a>
    <!-- /ko -->
@@ -532,7 +566,7 @@
 
 <script type="text/html" id="param-fs-link">
   <!-- ko if: path.split('=', 2)[1] && path.split('=', 2)[1].charAt(0) == '/' -->
-    <a data-bind="attr: {href: '/filebrowser/view' + $data.path.split('=', 2)[1] }" target="_blank" title="${ _('Open') }">
+    <a data-bind="attr: {href: '/filebrowser/view=' + $data.path.split('=', 2)[1] }" target="_blank" title="${ _('Open') }">
       <i class="fa fa-external-link-square"></i>
     </a>
   <!-- /ko -->
@@ -556,7 +590,7 @@
 
     <div data-bind="visible: $root.isEditing">
       <div data-bind="visible: ! $parent.ooziePropertiesExpanded()" class="nowrap">
-        <input type="text" style="width:25%" class="filechooser-input" data-bind="filechooser: properties.script_path, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: properties.script_path, attr: { placeholder:  $root.workflow_properties.script_path.help_text }"/>
+        <input type="text" style="width:25%" class="filechooser-input" data-bind="filechooser: properties.script_path, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: properties.script_path, attr: { placeholder:  $root.workflow_properties.script_path.help_text }" validate="nonempty"/>
         <span data-bind='template: { name: "common-fs-link", data: {path: properties.script_path(), with_label: false}}'></span>
 
         &nbsp;&nbsp;
@@ -614,7 +648,7 @@
 
     <div data-bind="visible: $root.isEditing">
       <div data-bind="visible: ! $parent.ooziePropertiesExpanded()" class="nowrap">
-        <input type="text" class="filechooser-input" data-bind="filechooser: properties.script_path, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: properties.script_path, attr: { placeholder:  $root.workflow_properties.script_path.help_text }"/>
+        <input type="text" class="filechooser-input" data-bind="filechooser: properties.script_path, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: properties.script_path, attr: { placeholder:  $root.workflow_properties.script_path.help_text }" validate="nonempty"/>
         <span data-bind='template: { name: "common-fs-link", data: {path: properties.script_path(), with_label: false}}'></span>
 
         <div class="row-fluid">
@@ -674,7 +708,7 @@
 
     <div data-bind="visible: $root.isEditing">
       <div data-bind="visible: ! $parent.ooziePropertiesExpanded()" class="nowrap">
-        <input type="text" class="filechooser-input" data-bind="filechooser: properties.script_path, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: properties.script_path, attr: { placeholder:  $root.workflow_properties.script_path.help_text }" />
+        <input type="text" class="filechooser-input" data-bind="filechooser: properties.script_path, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: properties.script_path, attr: { placeholder:  $root.workflow_properties.script_path.help_text }" validate="nonempty"/>
         <span data-bind='template: { name: "common-fs-link", data: {path: properties.script_path(), with_label: false}}'></span>
 
         <div class="row-fluid">
@@ -735,30 +769,31 @@
     <div data-bind="visible: $root.isEditing">
       <div data-bind="visible: ! $parent.ooziePropertiesExpanded()" class="nowrap">
 
-        <div class="row-fluid">
-          <div class="span6">
-            <span data-bind="text: $root.workflow_properties.spark_master.label" style="display: inline-block"></span>
-            <input type="text" class="input-medium" data-bind="value: properties.spark_master, attr: { placeholder: $root.workflow_properties.spark_master.help_text }" />
-          </div>
-          <div class="span6">
-            <span data-bind="text: $root.workflow_properties.mode.label" style="display: inline-block"></span>
-            <input type="text" class="input-medium" data-bind="value: properties.mode, attr: { placeholder: $root.workflow_properties.mode.help_text }" />
-          </div>
+        <div class="airy">
+          <span class="widget-label" data-bind="text: $root.workflow_properties.spark_master.label"></span>
+          <input type="text" class="input-medium" data-bind="value: properties.spark_master, attr: { placeholder: $root.workflow_properties.spark_master.help_text }" />
         </div>
 
-        <span data-bind="text: $root.workflow_properties.app_name.label" style="display: inline-block; width: 75px"></span>
-        <input type="text" class="input-xlarge" data-bind="value: properties.app_name, attr: { placeholder: $root.workflow_properties.app_name.help_text }" />
+        <div class="airy">
+          <span class="widget-label" data-bind="text: $root.workflow_properties.mode.label"></span>
+          <input type="text" class="input-medium" data-bind="value: properties.mode, attr: { placeholder: $root.workflow_properties.mode.help_text }" />
+        </div>
 
-        <br/>
+        <div class="airy">
+          <span class="widget-label" data-bind="text: $root.workflow_properties.app_name.label"></span>
+          <input type="text" class="input-xlarge" data-bind="value: properties.app_name, attr: { placeholder: $root.workflow_properties.app_name.help_text }" />
+        </div>
 
-        <span data-bind="text: $root.workflow_properties.jars.label" style="display: inline-block; width: 75px"></span>
-        <input type="text" class="filechooser-input" data-bind="filechooser: properties.jars, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: properties.jars, attr: { placeholder:  $root.workflow_properties.jars.help_text }" />
-        <span data-bind='template: { name: "common-fs-link", data: {path: properties.jars(), with_label: false}}'></span>
+        <div class="airy">
+          <span class="widget-label" data-bind="text: $root.workflow_properties.jars.label"></span>
+          <input type="text" class="filechooser-input" data-bind="filechooser: properties.jars, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: properties.jars, attr: { placeholder:  $root.workflow_properties.jars.help_text }" validate="nonempty"/>
+          <span data-bind='template: { name: "common-fs-link", data: {path: properties.jars(), with_label: false}}'></span>
+        </div>
 
-        <br/>
-
-        <span data-bind="text: $root.workflow_properties.class.label" style="display: inline-block; width: 75px"></span>
-        <input type="text" class="input-xlarge" data-bind="value: properties.class, attr: { placeholder: $root.workflow_properties.class.help_text }" />
+        <div class="airy">
+          <span class="widget-label" data-bind="text: $root.workflow_properties.class.label"></span>
+          <input type="text" class="input-xlarge" data-bind="value: properties.class, attr: { placeholder: $root.workflow_properties.class.help_text }" />
+        </div>
 
         <h6>
           <a class="pointer" data-bind="click: function(){ properties.spark_arguments.push(ko.mapping.fromJS({'value': ''})); $(document).trigger('drawArrows') }">
@@ -767,7 +802,7 @@
         </h6>
         <ul class="unstyled" data-bind="visible: properties.spark_arguments().length > 0, foreach: properties.spark_arguments">
           <li>
-            <input type="text" class="input-xlarge filechooser-input" data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, attr: { placeholder:  $root.workflow_properties.spark_arguments.help_text }" />
+            <input type="text" class="input-xlarge filechooser-input" data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, attr: { placeholder:  $root.workflow_properties.spark_arguments.help_text }" validate="nonempty"/>
             <span data-bind='template: { name: "common-fs-link", data: {path: value, with_label: false}}'></span>
             <a href="#" data-bind="click: function(){ $parent.properties.spark_arguments.remove(this); $(document).trigger('drawArrows') }">
               <i class="fa fa-minus"></i>
@@ -787,7 +822,7 @@
       </ul>
       <div class="tab-content">
         <div class="tab-pane active" data-bind="attr: { id: 'properties-' + id() }">
-          <span data-bind="text: $root.workflow_properties.spark_opts.label" style="display: inline-block; width: 75px"></span>
+          <span class="widget-label"  data-bind="text: $root.workflow_properties.spark_opts.label"></span>
           <input type="text" class="input-xlarge" data-bind="value: properties.spark_opts, attr: { placeholder: $root.workflow_properties.spark_opts.help_text }" />
 
           <br/>
@@ -823,15 +858,16 @@
 
     <div data-bind="visible: $root.isEditing">
       <div data-bind="visible: ! $parent.ooziePropertiesExpanded()" class="nowrap">
-        <span data-bind="text: $root.workflow_properties.jar_path.label" style="display: inline-block; width: 75px"></span>
-        <input type="text" class="filechooser-input input-xlarge"
-            data-bind="filechooser: properties.jar_path, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: properties.jar_path, attr: { placeholder: $root.workflow_properties.jar_path.help_text }"
-        />
-        <span data-bind='template: { name: "common-fs-link", data: {path: properties.jar_path(), with_label: false}}'></span>
+        <div class="airy">
+          <span class="widget-label"  data-bind="text: $root.workflow_properties.jar_path.label"></span>
+          <input type="text" class="filechooser-input input-xlarge" data-bind="filechooser: properties.jar_path, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: properties.jar_path, attr: { placeholder: $root.workflow_properties.jar_path.help_text }" validate="nonempty"/>
+          <span data-bind='template: { name: "common-fs-link", data: {path: properties.jar_path(), with_label: false}}'></span>
+        </div>
 
-        <br/>
-        <span data-bind="text: $root.workflow_properties.main_class.label" style="display: inline-block; width: 75px"></span>
-        <input type="text" class="input-xlarge" data-bind="value: properties.main_class, attr: { placeholder: $root.workflow_properties.main_class.help_text }" />
+        <div class="airy">
+          <span class="widget-label" data-bind="text: $root.workflow_properties.main_class.label"></span>
+          <input type="text" class="input-xlarge" data-bind="value: properties.main_class, attr: { placeholder: $root.workflow_properties.main_class.help_text }" validate="nonempty"/>
+        </div>
 
         <div class="row-fluid">
           <div class="span6" data-bind="template: { name: 'common-properties-arguments' }"></div>
@@ -897,10 +933,10 @@
     <div data-bind="visible: $root.isEditing">
       <div data-bind="visible: ! $parent.ooziePropertiesExpanded()" class="nowrap">
         <span data-bind="text: $root.workflow_properties.command.label"></span>
-        <input type="text" data-bind="value: properties.command" />
+        <textarea data-bind="value: properties.command" class="input-xlarge" style="resize:both" validate="nonempty"></textarea>
 
         <div class="row-fluid">
-          <div class="span6" data-bind="template: { name: 'common-properties-parameters' }"></div>
+          <div class="span6" data-bind="template: { name: 'common-properties-arguments' }"></div>
           <div class="span6" data-bind="template: { name: 'common-properties-files' }"></div>
         </div>
       </div>
@@ -949,7 +985,7 @@
     <div data-bind="visible: $root.isEditing">
       <div data-bind="visible: ! $parent.ooziePropertiesExpanded()" class="nowrap">
         <span data-bind="text: $root.workflow_properties.jar_path.label"></span>
-        <input type="text" class="filechooser-input" data-bind="filechooser: properties.jar_path, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: properties.jar_path, value: properties.jar_path" />
+        <input type="text" class="filechooser-input" data-bind="filechooser: properties.jar_path, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: properties.jar_path, value: properties.jar_path" validate="nonempty"/>
         <span data-bind='template: { name: "common-fs-link", data: {path: properties.jar_path(), with_label: false} }'></span>
 
         <h6>
@@ -959,8 +995,8 @@
         </h6>
         <ul data-bind="visible: properties.job_properties().length > 0, foreach: properties.job_properties" class="unstyled">
           <li>
-            <input type="text" class="span4" data-bind="value: name" placeholder="${ _('name, e.g. mapred.job.queue.name') }"/>
-            <input type="text" class="filechooser-input" data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, value: value, attr: { placeholder: $root.workflow_properties.job_properties.help_text }"/>
+            <input type="text" class="span4" data-bind="value: name" placeholder="${ _('name, e.g. mapred.job.queue.name') }" validate="nonempty"/>
+            <input type="text" class="filechooser-input" data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, value: value, attr: { placeholder: $root.workflow_properties.job_properties.help_text }" validate="nonempty"/>
             <a href="#" data-bind="click: function(){ $parent.properties.job_properties.remove(this); $(document).trigger('drawArrows') }">
               <i class="fa fa-minus"></i>
             </a>
@@ -991,7 +1027,7 @@
           <li>
             <div style="display: inline-block; width: 60px" data-bind="text: type"></div>
             <input type="text" class="filechooser-input input-xlarge"
-                data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, value: value, attr: { placeholder: $root.workflow_properties.prepares.help_text }"/>
+                data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, value: value, attr: { placeholder: $root.workflow_properties.prepares.help_text }" validate="nonempty"/>
             <a href="#" data-bind="click: function(){ $parent.properties.prepares.remove(this); $(document).trigger('drawArrows') }">
               <i class="fa fa-minus"></i>
             </a>
@@ -1006,7 +1042,7 @@
 
         <!-- ko if: properties.job_xml -->
           <h6>${ _('Job XML') }</h6>
-          <input type="text" class="input-xlarge filechooser-input" data-bind="filechooser: properties.job_xml, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: properties.job_xml, attr: { placeholder: $root.workflow_properties.job_xml.help_text }"/>
+          <input type="text" class="input-xlarge filechooser-input" data-bind="filechooser: properties.job_xml, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: properties.job_xml, attr: { placeholder: $root.workflow_properties.job_xml.help_text }" validate="nonempty"/>
         <!-- /ko -->
 
         <h6>
@@ -1016,7 +1052,7 @@
         </h6>
         <ul data-bind="visible: properties.archives().length > 0, foreach: properties.archives" class="unstyled">
           <li>
-            <input type="text" class="filechooser-input input-xlarge" data-bind="filechooser: name(), filechooserFilter: 'zip,tar,tgz,tar.gz', filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: name, value: name, attr: { placeholder: $root.workflow_properties.archives.help_text }"/>
+            <input type="text" class="filechooser-input input-xlarge" data-bind="filechooser: name(), filechooserFilter: 'zip,tar,tgz,tar.gz,jar', filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: name, value: name, attr: { placeholder: $root.workflow_properties.archives.help_text }" validate="nonempty"/>
             <span data-bind='template: { name: "common-fs-link", data: { path: name(), with_label: false} }'></span>
             <a href="#" data-bind="click: function(){ $parent.properties.archives.remove(this); $(document).trigger('drawArrows') }">
               <i class="fa fa-minus"></i>
@@ -1064,9 +1100,9 @@
         </h6>
         <ul data-bind="visible: properties.job_properties().length > 0, foreach: properties.job_properties" class="unstyled">
           <li>
-            <input type="text" data-bind="value: name" placeholder="${ _('Name, e.g. input') }"/>
+            <input type="text" class="span4" data-bind="value: name" placeholder="${ _('Name, e.g. input') }" validate="nonempty"/>
 
-            <input type="text" class="input-xlarge filechooser-input" data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, attr: { placeholder:  $root.workflow_properties.job_properties.help_text }" />
+            <input type="text" class="filechooser-input" data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, attr: { placeholder:  $root.workflow_properties.job_properties.help_text }" validate="nonempty" />
             <span data-bind='template: { name: "common-fs-link", data: {path: value, with_label: false}}'></span>
 
             <a href="#" data-bind="click: function(){ $parent.properties.job_properties.remove(this); $(document).trigger('drawArrows') }">
@@ -1126,7 +1162,7 @@
   <div class="row-fluid" data-bind="with: $root.workflow.getNodeById(id())" style="padding: 10px">
     <div data-bind="visible: $root.isEditing">
       <div data-bind="visible: ! $parent.ooziePropertiesExpanded()" class="nowrap">
-        <input type="text" data-bind="value: properties.shell_command" />
+        <input type="text" data-bind="value: properties.shell_command" validate="nonempty"/>
         <span data-bind='template: { name: "common-fs-link", data: {path: properties.shell_command(), with_label: false} }'></span>
 
         <div class="row-fluid">
@@ -1195,12 +1231,14 @@
     <div data-bind="visible: $root.isEditing">
 
       <div data-bind="visible: ! $parent.ooziePropertiesExpanded()" class="nowrap">
-        <span data-bind="text: $root.workflow_properties.host.label"></span>
-        <input type="text" data-bind="value: properties.host" />
-        <br/>
-
-        <span data-bind="text: $root.workflow_properties.ssh_command.label"></span>
-        <input type="text" data-bind="value: properties.ssh_command" />
+        <div class="airy">
+          <span class="widget-label widget-label-large" data-bind="text: $root.workflow_properties.host.label"></span>
+          <input type="text" data-bind="value: properties.host" validate="nonempty"/>
+        </div>
+        <div class="airy">
+          <span class="widget-label widget-label-large" data-bind="text: $root.workflow_properties.ssh_command.label"></span>
+          <input type="text" data-bind="value: properties.ssh_command" validate="nonempty"/>
+        </div>
         <div class="row-fluid">
           <div class="span6" data-bind="template: { name: 'common-properties-arguments' }"></div>
         </div>
@@ -1250,14 +1288,14 @@
 
     <div data-bind="visible: ! $root.isEditing()">
       <span data-bind="template: { name: 'logs-icon' }"></span>
-      <span data-bind="text: '${ _("Delete") }', visible: properties.deletes().length > 0"></span>
+      <span data-bind="text: '${ _ko("Delete") }', visible: properties.deletes().length > 0"></span>
       <ul data-bind="foreach: properties.deletes" class="unstyled">
         <li>
           <span data-bind='template: { name: "common-fs-link", data: {path: value(), with_label: true} }, visible: value().length > 0'></span>
         </li>
       </ul>
 
-      <span data-bind="text: '${ _("Create") }', visible: properties.mkdirs().length > 0 || properties.touchzs().length > 0"></span>
+      <span data-bind="text: '${ _ko("Create") }', visible: properties.mkdirs().length > 0 || properties.touchzs().length > 0"></span>
       <ul data-bind="foreach: properties.mkdirs" class="unstyled">
         <li>
           <span data-bind='template: { name: "common-fs-link", data: {path: value(), with_label: true} }, visible: value().length > 0'></span>
@@ -1269,7 +1307,7 @@
         </li>
       </ul>
 
-      <span data-bind="text: '${ _("Move") }', visible: properties.moves().length > 0"></span>
+      <span data-bind="text: '${ _ko("Move") }', visible: properties.moves().length > 0"></span>
       <ul data-bind="foreach: properties.moves" class="unstyled">
         <li>
           <span data-bind='template: { name: "common-fs-link", data: {path: source(), with_label: true} }, visible: source().length > 0'></span>
@@ -1278,27 +1316,27 @@
         </li>
       </ul>
 
-      <span data-bind="text: '${ _("Change permissions") }', visible: properties.chmods().length > 0"></span>
+      <span data-bind="text: '${ _ko("Change permissions") }', visible: properties.chmods().length > 0"></span>
       <ul data-bind="foreach: properties.chmods" class="unstyled">
         <li>
           <span data-bind='template: { name: "common-fs-link", data: {path: value(), with_label: true} }, visible: value().length > 0'></span>
           ${ _('to') }
           <span data-bind="text: permissions"/>
-          <span data-bind="visible: ! dir_files(), text: '${ _('for directories') }'"/>
-          <span data-bind="visible: dir_files(), text: '${ _('for directories and files') }'"/>
-          <span data-bind="visible: recursive, text: '${ _('recursivelt') }'"/>
+          <span data-bind="visible: ! dir_files(), text: '${ _ko('for directories') }'"/>
+          <span data-bind="visible: dir_files(), text: '${ _ko('for directories and files') }'"/>
+          <span data-bind="visible: recursive, text: '${ _ko('recursively') }'"/>
         </li>
       </ul>
 
-      <span data-bind="text: '${ _("Change groups") }', visible: properties.chgrps().length > 0"></span>
+      <span data-bind="text: '${ _ko("Change groups") }', visible: properties.chgrps().length > 0"></span>
       <ul data-bind="foreach: properties.chgrps" class="unstyled">
         <li>
           <span data-bind='template: { name: "common-fs-link", data: {path: value(), with_label: true} }, visible: value().length > 0'></span>
           ${ _('to') }
           <span data-bind="text: group"/>
-          <span data-bind="visible: ! dir_files(), text: '${ _('for directories') }'"/>
-          <span data-bind="visible: dir_files(), text: '${ _('for directories and files') }'"/>
-          <span data-bind="visible: recursive, text: '${ _('recursively') }'"/>
+          <span data-bind="visible: ! dir_files(), text: '${ _ko('for directories') }'"/>
+          <span data-bind="visible: dir_files(), text: '${ _ko('for directories and files') }'"/>
+          <span data-bind="visible: recursive, text: '${ _ko('recursively') }'"/>
         </li>
       </ul>
     </div>
@@ -1313,7 +1351,7 @@
         </h6>
         <ul data-bind="foreach: properties.deletes" class="unstyled">
           <li>
-            <input type="text" class="input-xlarge filechooser-input" data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, value: value, attr: { placeholder: $root.workflow_properties.deletes.help_text }"/>
+            <input type="text" class="input-xlarge filechooser-input" data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, value: value, attr: { placeholder: $root.workflow_properties.deletes.help_text }" validate="nonempty"/>
             <span data-bind='template: { name: "common-fs-link", data: {path: value(), with_label: false} }, visible: value().length > 0'></span>
             <a href="#" data-bind="click: function(){ $parent.properties.deletes.remove(this); $(document).trigger('drawArrows') }">
               <i class="fa fa-minus"></i>
@@ -1328,7 +1366,7 @@
         </h6>
         <ul data-bind="foreach: properties.mkdirs" class="unstyled">
           <li>
-            <input type="text" class="input-xlarge filechooser-input" data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, value: value, attr: { placeholder: $root.workflow_properties.mkdirs.help_text }"/>
+            <input type="text" class="input-xlarge filechooser-input" data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, value: value, attr: { placeholder: $root.workflow_properties.mkdirs.help_text }" validate="nonempty"/>
             <span data-bind='template: { name: "common-fs-link", data: {path: value(), with_label: false} }, visible: value().length > 0'></span>
             <a href="#" data-bind="click: function(){ $parent.properties.mkdirs.remove(this); $(document).trigger('drawArrows') }">
               <i class="fa fa-minus"></i>
@@ -1343,7 +1381,7 @@
         </h6>
         <ul data-bind="foreach: properties.touchzs" class="unstyled">
           <li>
-            <input type="text" class="input-xlarge filechooser-input" data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, value: value, attr: { placeholder: $root.workflow_properties.touchzs.help_text }"/>
+            <input type="text" class="input-xlarge filechooser-input" data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, value: value, attr: { placeholder: $root.workflow_properties.touchzs.help_text }" validate="nonempty"/>
             <span data-bind='template: { name: "common-fs-link", data: {path: value(), with_label: false} }, visible: value().length > 0'></span>
             <a href="#" data-bind="click: function(){ $parent.properties.touchzs.remove(this); $(document).trigger('drawArrows') }">
               <i class="fa fa-minus"></i>
@@ -1358,10 +1396,10 @@
         </h6>
         <ul data-bind="foreach: properties.moves" class="unstyled">
           <li>
-            <input type="text" class="filechooser-input thirty" data-bind="filechooser: source, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: source, value: source" placeholder="${ _('Source path') }"/>
+            <input type="text" class="filechooser-input thirty" data-bind="filechooser: source, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: source, value: source" placeholder="${ _('Source path') }" validate="nonempty"/>
             <span data-bind='template: { name: "common-fs-link", data: {path: source(), with_label: false} }, visible: source().length > 0'></span>
 
-            <input type="text" class="filechooser-input thirty" data-bind="filechooser: destination, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: destination, value: destination" placeholder="${ _('New destination path') }"/>
+            <input type="text" class="filechooser-input thirty" data-bind="filechooser: destination, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: destination, value: destination" placeholder="${ _('New destination path') }" validate="nonempty"/>
             <span data-bind='template: { name: "common-fs-link", data: {path: destination(), with_label: false} }, visible: destination().length > 0'></span>
             <a href="#" data-bind="click: function(){ $parent.properties.moves.remove(this); $(document).trigger('drawArrows') }">
               <i class="fa fa-minus"></i>
@@ -1449,16 +1487,20 @@
   <div class="row-fluid" data-bind="with: $root.workflow.getNodeById(id())" style="padding: 10px">
     <div data-bind="visible: $root.isEditing">
       <div data-bind="visible: ! $parent.ooziePropertiesExpanded()" class="nowrap">
-        <span data-bind="text: $root.workflow_properties.to.label" style="display: inline-block; width: 80px"></span>
-        <input type="text" data-bind="value: properties.to, attr: { placeholder: $root.workflow_properties.to.help_text }" />
-        <br/>
+        <div class="airy">
+          <span class="widget-label" data-bind="text: $root.workflow_properties.to.label"></span>
+          <input type="text" data-bind="value: properties.to, attr: { placeholder: $root.workflow_properties.to.help_text }" validate="nonempty"/>
+        </div>
 
-        <span data-bind="text: $root.workflow_properties.subject.label" style="display: inline-block; width: 80px"></span>
-        <input type="text" data-bind="value: properties.subject, attr: { placeholder: $root.workflow_properties.subject.help_text }" />
-        <br/>
+        <div class="airy">
+          <span class="widget-label" data-bind="text: $root.workflow_properties.subject.label"></span>
+          <input type="text" data-bind="value: properties.subject, attr: { placeholder: $root.workflow_properties.subject.help_text }" />
+        </div>
 
-        <span data-bind="text: $root.workflow_properties.body.label" style="display: inline-block; width: 80px"></span>
-        <textarea data-bind="value: properties.body, attr: { placeholder: $root.workflow_properties.body.help_text }"></textarea>
+        <div class="airy">
+          <span class="widget-label" data-bind="text: $root.workflow_properties.body.label"></span>
+          <textarea data-bind="value: properties.body, attr: { placeholder: $root.workflow_properties.body.help_text }"></textarea>
+        </div>
       </div>
     </div>
 
@@ -1507,18 +1549,16 @@
   <div class="row-fluid" data-bind="with: $root.workflow.getNodeById(id())" style="padding: 10px">
     <div data-bind="visible: $root.isEditing">
       <div data-bind="visible: ! $parent.ooziePropertiesExpanded()" class="nowrap">
-        <ul class="unstyled">
-          <li>
-            <span data-bind="text: $root.workflow_properties.mapper.label"></span>
-            <input type="text" data-bind="value: properties.mapper" />
-            <span data-bind='template: { name: "common-fs-link", data: {path: properties.mapper(), with_label: false} }'></span>
-          </li>
-          <li>
-            <span data-bind="text: $root.workflow_properties.reducer.label"></span>
-            <input type="text" data-bind="value: properties.reducer" />
-            <span data-bind='template: { name: "common-fs-link", data: {path: properties.reducer(), with_label: false} }'></span>
-          </li>
-        </ul>
+        <div class="airy">
+          <span class="widget-label" data-bind="text: $root.workflow_properties.mapper.label"></span>
+          <input type="text" data-bind="value: properties.mapper" validate="nonempty"/>
+          <span data-bind='template: { name: "common-fs-link", data: {path: properties.mapper(), with_label: false} }'></span>
+        </div>
+        <div class="airy">
+          <span class="widget-label" data-bind="text: $root.workflow_properties.reducer.label"></span>
+          <input type="text" data-bind="value: properties.reducer" validate="nonempty"/>
+          <span data-bind='template: { name: "common-fs-link", data: {path: properties.reducer(), with_label: false} }'></span>
+        </div>
         <div data-bind="template: { name: 'common-properties-files' }"></div>
       </div>
     </div>
@@ -1575,7 +1615,7 @@
         </h6>
         <ul data-bind="foreach: properties.distcp_parameters" class="unstyled">
           <li>
-            <input type="text" class="input-xlarge filechooser-input" data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, value: value, attr: { placeholder: $root.workflow_properties.distcp_parameters.help_text }"/>
+            <input type="text" class="input-xlarge filechooser-input" data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, value: value, attr: { placeholder: $root.workflow_properties.distcp_parameters.help_text }" validate="nonempty"/>
             <span data-bind='template: { name: "common-fs-link", data: {path: value(), with_label: false} }, visible: value().length > 0'></span>
             <a href="#" data-bind="click: function(){ $parent.properties.distcp_parameters.remove(this);  }">
               <i class="fa fa-minus"></i>
@@ -1609,9 +1649,10 @@
      <h6>${ _('Prepare') }</h6>
        <ul data-bind="visible: properties.prepares().length > 0, foreach: properties.prepares" class="unstyled">
          <li>
-           <div style="display: inline-block; width: 60px" data-bind="text: type"></div>
+
+'           <div style="display: inline-block; width: 60px" data-bind="text: type"></div>
            <input type="text" class="filechooser-input input-xlarge"
-                data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, value: value, attr: { placeholder: $root.workflow_properties.prepares.help_text }"/>
+                data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, value: value, attr: { placeholder: $root.workflow_properties.prepares.help_text }" validate="nonempty"/>
             <a href="#" data-bind="click: function(){ $parent.properties.prepares.remove(this); $(document).trigger('drawArrows') }">
               <i class="fa fa-minus"></i>
             </a>
@@ -1631,8 +1672,8 @@
        </h6>
            <ul data-bind="visible: properties.job_properties().length > 0, foreach: properties.job_properties" class="unstyled">
            <li>
-             <input type="text" data-bind="value: name" placeholder="${ _('name, e.g. mapred.job.queue.name') }"/>
-             <input type="text" class="filechooser-input input-xlarge" data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, value: value, attr: { placeholder: $root.workflow_properties.job_properties.help_text }"/>
+             <input type="text" data-bind="value: name" placeholder="${ _('name, e.g. mapred.job.queue.name') }" validate="nonempty"/>
+             <input type="text" class="filechooser-input input-xlarge" data-bind="filechooser: value, filechooserOptions: globalFilechooserOptions, hdfsAutocomplete: value, value: value, attr: { placeholder: $root.workflow_properties.job_properties.help_text }"  validate="nonempty"/>
              <a href="#" data-bind="click: function(){ $parent.properties.job_properties.remove(this); $(document).trigger('drawArrows') }">
                <i class="fa fa-minus"></i>
               </a>

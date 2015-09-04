@@ -27,14 +27,13 @@ from django.contrib.contenttypes import generic
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.staticfiles.storage import staticfiles_storage
 from django.core.urlresolvers import reverse
-from django.db import models, transaction
+from django.db import connection, models, transaction
 from django.db.models import Q
 from django.utils.translation import ugettext as _, ugettext_lazy as _t
 
+from desktop import appmanager
 from desktop.lib.i18n import force_unicode
 from desktop.lib.exceptions_renderable import PopupException
-
-from desktop import appmanager
 
 
 LOG = logging.getLogger(__name__)
@@ -73,15 +72,7 @@ class DocumentTagManager(models.Manager):
       return tag
 
   def _get_tag(self, user, name):
-    try:
-      tag, created = DocumentTag.objects.get_or_create(owner=user, tag=name)
-    except DocumentTag.MultipleObjectsReturned, ex:
-      # We can delete duplicate tags of a user
-      dups = DocumentTag.objects.filter(owner=user, tag=name)
-      tag = dups[0]
-      for dup in dups[1:]:
-        LOG.warn('Deleting duplicate %s' % dup)
-        dup.delete()
+    tag, created = DocumentTag.objects.get_or_create(owner=user, tag=name)
     return tag
 
   def get_default_tag(self, user):
@@ -161,7 +152,9 @@ class DocumentTag(models.Model):
   RESERVED = (DEFAULT, TRASH, HISTORY, EXAMPLE)
 
   objects = DocumentTagManager()
-  unique_together = ('owner', 'tag')
+
+  class Meta:
+    unique_together = ('owner', 'tag')
 
 
   def __unicode__(self):
@@ -261,78 +254,86 @@ class DocumentManager(models.Manager):
 
   def sync(self):
 
+    def find_jobs_with_no_doc(model):
+      return model.objects.filter(doc__isnull=True).select_related('owner')
+
+    table_names = connection.introspection.table_names()
+
     try:
-      with transaction.atomic():
-        from oozie.models import Workflow, Coordinator, Bundle
+      from oozie.models import Workflow, Coordinator, Bundle
 
-        for job in list(chain(Workflow.objects.all(), Coordinator.objects.all(), Bundle.objects.all())):
-          if job.doc.count() > 1:
-            LOG.warn('Deleting duplicate document %s for %s' % (job.doc.all(), job))
-            job.doc.all().delete()
-
-          if not job.doc.exists():
+      if \
+          Workflow._meta.db_table in table_names or \
+          Coordinator._meta.db_table in table_names or \
+          Bundle._meta.db_table in table_names:
+        with transaction.atomic():
+          for job in chain(
+              find_jobs_with_no_doc(Workflow),
+              find_jobs_with_no_doc(Coordinator),
+              find_jobs_with_no_doc(Bundle)):
             doc = Document.objects.link(job, owner=job.owner, name=job.name, description=job.description)
-            tag = DocumentTag.objects.get_example_tag(user=job.owner)
-            doc.tags.add(tag)
+
             if job.is_trashed:
               doc.send_to_trash()
+
             if job.is_shared:
               doc.share_to_default()
+
             if hasattr(job, 'managed'):
               if not job.managed:
                 doc.extra = 'jobsub'
                 doc.save()
-          if job.owner.username == SAMPLE_USERNAME:
-            job.doc.get().share_to_default()
     except Exception, e:
-      LOG.warn(force_unicode(e))
+      LOG.exception('error syncing oozie')
 
     try:
-      with transaction.atomic():
-        from beeswax.models import SavedQuery
+      from beeswax.models import SavedQuery
 
-        for job in SavedQuery.objects.all():
-          if job.doc.count() > 1:
-            LOG.warn('Deleting duplicate document %s for %s' % (job.doc.all(), job))
-            job.doc.all().delete()
-
-          if not job.doc.exists():
+      if SavedQuery._meta.db_table in table_names:
+        with transaction.atomic():
+          for job in find_jobs_with_no_doc(SavedQuery):
             doc = Document.objects.link(job, owner=job.owner, name=job.name, description=job.desc, extra=job.type)
-            tag = DocumentTag.objects.get_example_tag(user=job.owner)
-            doc.tags.add(tag)
             if job.is_trashed:
               doc.send_to_trash()
-          if job.owner.username == SAMPLE_USERNAME:
-            job.doc.get().share_to_default()
     except Exception, e:
-      LOG.warn(force_unicode(e))
+      LOG.exception('error syncing beeswax')
 
     try:
-      with transaction.atomic():
-        from pig.models import PigScript
+      from pig.models import PigScript
 
-        for job in PigScript.objects.all():
-          if job.doc.count() > 1:
-            LOG.warn('Deleting duplicate document %s for %s' % (job.doc.all(), job))
-            job.doc.all().delete()
-
-          if not job.doc.exists():
-            doc = Document.objects.link(job, owner=job.owner, name=job.dict['name'], description='')
-            tag = DocumentTag.objects.get_example_tag(user=job.owner)
-            doc.tags.add(tag)
-          if job.owner.username == SAMPLE_USERNAME:
-            job.doc.get().share_to_default()
+      if PigScript._meta.db_table in table_names:
+        with transaction.atomic():
+          for job in find_jobs_with_no_doc(PigScript):
+            Document.objects.link(job, owner=job.owner, name=job.dict['name'], description='')
     except Exception, e:
-      LOG.warn(force_unicode(e))
+      LOG.exception('error syncing pig')
 
     try:
-      with transaction.atomic():
-        for job in Document2.objects.all():
-          if job.doc.count() > 1:
-            LOG.warn('Deleting duplicate document %s for %s' % (job.doc.all(), job))
-            job.doc.all().delete()
+      from search.models import Collection
 
-          if not job.doc.exists():
+      if Collection._meta.db_table in table_names:
+        with transaction.atomic():
+          for dashboard in Collection.objects.all():
+            col_dict = dashboard.properties_dict['collection']
+            if not 'uuid' in col_dict:
+              _uuid = str(uuid.uuid4())
+              col_dict['uuid'] = _uuid
+              dashboard.update_properties({'collection': col_dict})
+              if dashboard.owner is None:
+                from useradmin.models import install_sample_user
+                owner = install_sample_user()
+              else:
+                owner = dashboard.owner
+              dashboard_doc = Document2.objects.create(name=dashboard.label, uuid=_uuid, type='search-dashboard', owner=owner, description=dashboard.label, data=dashboard.properties)
+              Document.objects.link(dashboard_doc, owner=owner, name=dashboard.label, description=dashboard.label, extra='search-dashboard')
+              dashboard.save()
+    except Exception, e:
+      LOG.exception('error syncing search')
+
+    try:
+      if Document2._meta.db_table in table_names:
+        with transaction.atomic():
+          for job in find_jobs_with_no_doc(Document2):
             if job.type == 'oozie-workflow2':
               extra = 'workflow2'
             elif job.type == 'oozie-coordinator2':
@@ -341,41 +342,108 @@ class DocumentManager(models.Manager):
               extra = 'bundle2'
             elif job.type == 'notebook':
               extra = 'notebook'
+            elif job.type == 'search-dashboard':
+              extra = 'search-dashboard'
             else:
               extra = ''
             doc = Document.objects.link(job, owner=job.owner, name=job.name, description=job.description, extra=extra)
-          if job.owner.username == SAMPLE_USERNAME:
-            doc = job.doc.get()
+    except Exception, e:
+      LOG.exception('error syncing Document2')
+
+
+    if Document._meta.db_table in table_names:
+      # Make sure doc have at least a tag
+      try:
+        for doc in Document.objects.filter(tags=None):
+          default_tag = DocumentTag.objects.get_default_tag(doc.owner)
+          doc.tags.add(default_tag)
+      except Exception, e:
+        LOG.exception('error adding at least one tag to docs')
+
+      # Make sure all the sample user documents are shared.
+      try:
+        with transaction.atomic():
+          for doc in Document.objects.filter(owner__username=SAMPLE_USERNAME):
             doc.share_to_default()
-            tag = DocumentTag.objects.get_example_tag(user=job.owner)
+
+            tag = DocumentTag.objects.get_example_tag(user=doc.owner)
             doc.tags.add(tag)
-    except Exception, e:
-      LOG.warn(force_unicode(e))
 
+            doc.save()
+      except Exception, e:
+        LOG.exception('error sharing sample user documents')
 
-    # Make sure doc have at least a tag
-    try:
-      for doc in Document.objects.filter(tags=None):
-        default_tag = DocumentTag.objects.get_default_tag(doc.owner)
-        doc.tags.add(default_tag)
-    except Exception, e:
-      LOG.warn(force_unicode(e))
+      # For now remove the default tag from the examples
+      try:
+        for doc in Document.objects.filter(tags__tag=DocumentTag.EXAMPLE):
+          default_tag = DocumentTag.objects.get_default_tag(doc.owner)
+          doc.tags.remove(default_tag)
+      except Exception, e:
+        LOG.exception('error removing default tags')
 
-    # For now remove the default tag from the examples
-    try:
-      for doc in Document.objects.filter(tags__tag=DocumentTag.EXAMPLE):
-        default_tag = DocumentTag.objects.get_default_tag(doc.owner)
-        doc.tags.remove(default_tag)
-    except Exception, e:
-      LOG.warn(force_unicode(e))
+      # ------------------------------------------------------------------------
 
-    # Delete documents with no object
-    try:
-      for doc in Document.objects.all():
-        if doc.content_type is None or doc.content_object is None:
-          doc.delete()
-    except Exception, e:
-      LOG.warn(force_unicode(e))
+      LOG.info('Looking for documents that have no object')
+
+      # Delete documents with no object.
+      with transaction.atomic():
+        # First, delete all the documents that don't have a content type
+        docs = Document.objects.filter(content_type=None)
+
+        if docs:
+          LOG.info('Deleting %s doc(s) that do not have a content type' % docs.count())
+          docs.delete()
+
+        # Next, it's possible that there are documents pointing at a non-existing
+        # content_type. We need to do a left join to find these records, but we
+        # can't do this directly in django. To get around writing wrap sql (which
+        # might not be portable), we'll use an aggregate to count up all the
+        # associated content_types, and delete the documents that have a count of
+        # zero.
+        #
+        # Note we're counting `content_type__name` to force the join.
+        docs = Document.objects \
+            .values('id') \
+            .annotate(content_type_count=models.Count('content_type__name')) \
+            .filter(content_type_count=0)
+
+        if docs:
+          LOG.info('Deleting %s doc(s) that have invalid content types' % docs.count())
+          docs.delete()
+
+        # Finally we need to delete documents with no associated content object.
+        # This is tricky because of our use of generic foreign keys. So to do
+        # this a bit more efficiently, we'll start with a query of all the
+        # documents, then step through each content type and and filter out all
+        # the documents it's referencing from our document query. Messy, but it
+        # works.
+
+        docs = Document.objects.all()
+
+        for content_type in ContentType.objects.all():
+          model_class = content_type.model_class()
+
+          # Ignore any types that don't have a model.
+          if model_class is None:
+            continue
+
+          # Ignore types that don't have a table yet.
+          if model_class._meta.db_table not in table_names:
+            continue
+
+          # Ignore classes that don't have a 'doc'.
+          if not hasattr(model_class, 'doc'):
+            continue
+
+          # First create a query that grabs all the document ids for this type.
+          docs_from_content = model_class.objects.values('doc__id')
+
+          # Next, filter these from our document query.
+          docs = docs.exclude(id__in=docs_from_content)
+
+        if docs.exists():
+          LOG.info('Deleting %s documents' % docs.count())
+          docs.delete()
 
 
 UTC_TIME_FORMAT = "%Y-%m-%dT%H:%MZ"
@@ -397,7 +465,9 @@ class Document(models.Model):
   content_object = generic.GenericForeignKey('content_type', 'object_id')
 
   objects = DocumentManager()
-  unique_together = ('content_type', 'object_id')
+
+  class Meta:
+    unique_together = ('content_type', 'object_id')
 
   def __unicode__(self):
     return force_unicode('%s %s %s') % (self.content_type, self.name, self.owner)
@@ -452,31 +522,39 @@ class Document(models.Model):
     if self.can_read(user):
       return True
     else:
-      raise exception_class(_('Only superusers and %s are allowed to read this document.') % user)
+      raise exception_class(_("Document does not exist or you don't have the permission to access it."))
 
   def can_write_or_exception(self, user, exception_class=PopupException):
     if self.can_write(user):
       return True
     else:
-      raise exception_class(_('Only superusers and %s are allowed to write this document.') % user)
+      raise exception_class(_("Document does not exist or you don't have the permission to access it."))
 
-  def copy(self, name=None, owner=None):
-    copy_doc = self
+  def copy(self, content_object, name, owner, description=None):
+    if content_object:
+      copy_doc = self
 
-    copy_doc.pk = None
-    copy_doc.id = None
-    if name is not None:
+      copy_doc.pk = None
+      copy_doc.id = None
       copy_doc.name = name
-    if owner is not None:
       copy_doc.owner = owner
-    copy_doc.save()
+      if description:
+        copy_doc.description = description
 
-    # Don't copy tags
-    default_tag = DocumentTag.objects.get_default_tag(copy_doc.owner)
-    tags = [default_tag]
-    copy_doc.tags.add(*tags)
+      copy_doc = Document.objects.link(content_object,
+                                       owner=copy_doc.owner,
+                                       name=copy_doc.name,
+                                       description=copy_doc.description,
+                                       extra=copy_doc.extra)
 
-    return copy_doc
+      # Update reverse Document relation to new copy
+      if content_object.doc.get():
+        content_object.doc.get().delete()
+      content_object.doc.add(copy_doc)
+
+      return copy_doc
+    else:
+      raise PopupException(_("Document copy method requires a content_object argument."))
 
   @property
   def icon(self):
@@ -491,6 +569,8 @@ class Document(models.Model):
         return staticfiles_storage.url('oozie/art/icon_oozie_bundle_48.png')
       elif self.extra == 'notebook':
         return staticfiles_storage.url('spark/art/icon_spark_48.png')
+      elif self.extra.startswith('search'):
+        return staticfiles_storage.url('search/art/icon_search_48.png')
       elif self.content_type.app_label == 'beeswax':
         if self.extra == '0':
           return staticfiles_storage.url(apps['beeswax'].icon_path)
@@ -525,9 +605,10 @@ class Document(models.Model):
     """
     for name, perm in perms_dict.iteritems():
       users = groups = None
-
       if perm.get('user_ids'):
         users = auth_models.User.objects.in_bulk(perm.get('user_ids'))
+      else:
+        users = []
 
       if perm.get('group_ids'):
         groups = auth_models.Group.objects.in_bulk(perm.get('group_ids'))
@@ -617,15 +698,7 @@ class DocumentPermissionManager(models.Manager):
       perm.delete()
 
   def list(self, document, perm='read'):
-    try:
-      perm, created = DocumentPermission.objects.get_or_create(doc=document, perms=perm)
-    except DocumentPermission.MultipleObjectsReturned:
-      # We can delete duplicate perms of a document
-      dups = DocumentPermission.objects.filter(doc=document, perms=perm)
-      perm = dups[0]
-      for dup in dups[1:]:
-        LOG.warn('Deleting duplicate %s' % dup)
-        dup.delete()
+    perm, created = DocumentPermission.objects.get_or_create(doc=document, perms=perm)
     return perm
 
 
@@ -637,15 +710,16 @@ class DocumentPermission(models.Model):
 
   users = models.ManyToManyField(auth_models.User, db_index=True, db_table='documentpermission_users')
   groups = models.ManyToManyField(auth_models.Group, db_index=True, db_table='documentpermission_groups')
-  perms = models.TextField(default=READ_PERM, choices=( # one perm
+  perms = models.CharField(default=READ_PERM, max_length=10, choices=( # one perm
     (READ_PERM, 'read'),
     (WRITE_PERM, 'write'),
   ))
 
 
   objects = DocumentPermissionManager()
-  unique_together = ('doc', 'perms')
 
+  class Meta:
+    unique_together = ('doc', 'perms')
 
 
 class Document2Manager(models.Manager):
@@ -676,7 +750,9 @@ class Document2(models.Model):
   doc = generic.GenericRelation(Document, related_name='doc_doc') # Compatibility with Hue 3
 
   objects = Document2Manager()
-  unique_together = ('uuid', 'version', 'is_history')
+
+  class Meta:
+    unique_together = ('uuid', 'version', 'is_history')
 
   def natural_key(self):
     return (self.uuid, self.version, self.is_history)
@@ -688,6 +764,20 @@ class Document2(models.Model):
     data_python = json.loads(self.data)
 
     return data_python
+
+  def copy(self, name, owner, description=None):
+    copy_doc = self
+
+    copy_doc.pk = None
+    copy_doc.id = None
+    copy_doc.uuid = uuid_default()
+    copy_doc.name = name
+    copy_doc.owner = owner
+    if description:
+      copy_doc.description = description
+    copy_doc.save()
+
+    return copy_doc
 
   def update_data(self, post_data):
     data_dict = self.data_dict
@@ -702,7 +792,9 @@ class Document2(models.Model):
     elif self.type == 'oozie-bundle2':
       return reverse('oozie:edit_bundle') + '?bundle=' + str(self.id)
     elif self.type == 'notebook':
-      return reverse('spark:editor') + '?notebook=' + str(self.id)
+      return reverse('spark:notebook') + '?notebook=' + str(self.id)
+    elif self.type == 'search-dashboard':
+      return reverse('search:index') + '?collection=' + str(self.id)
     else:
       return reverse('oozie:edit_workflow') + '?workflow=' + str(self.id)
 
@@ -717,8 +809,30 @@ class Document2(models.Model):
       'type': self.type,
       'last_modified': self.last_modified.strftime(UTC_TIME_FORMAT),
       'last_modified_ts': calendar.timegm(self.last_modified.utctimetuple()),
-      'isSelected': False
+      'isSelected': False,
+      'absoluteUrl': self.get_absolute_url()
     }
 
   def can_read_or_exception(self, user):
     self.doc.get().can_read_or_exception(user)
+
+
+def get_data_link(meta):
+  link = None
+
+  if not meta.get('type'):
+    pass
+  elif meta['type'] == 'hbase':
+    link = '/hbase/#Cluster/%(table)s/query/%(row_key)s' % meta
+    if 'col' in meta:
+      link += '[%(fam)s:%(col)s]' % meta
+    elif 'fam' in meta:
+      link += '[%(fam)s]' % meta
+  elif meta['type'] == 'hdfs':
+    link = '/filebrowser/view=%(path)s' % meta # Could add a byte #
+  elif meta['type'] == 'link':
+    link = meta['link']
+  elif meta['type'] == 'hive':
+    link = '/metastore/table/%(database)s/%(table)s' % meta # Could also add col=val
+
+  return link

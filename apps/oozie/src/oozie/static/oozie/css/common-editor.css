@@ -65,6 +65,10 @@ input[type="text"].thirty {
   width: 30%;
 }
 
+input[type="text"].with-errors, textarea.with-errors {
+  border: solid 1px #EE5F5B;
+}
+
 .fileChooserBtn {
   height: 31px;
 }
@@ -112,6 +116,10 @@ input[type="text"].filechooser-input.input-xlarge {
   -webkit-box-shadow: none;
   -moz-box-shadow: none;
   box-shadow: none;
+}
+
+.qq-upload-button-focus {
+  outline: none;
 }
 
 ul.with-margin li {

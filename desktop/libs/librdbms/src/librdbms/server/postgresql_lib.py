@@ -82,11 +82,18 @@ class PostgreSQLClient(BaseRDMSClient):
 
 
   def get_databases(self):
-    return [self._conn_params['database']]
+    # List all the schemas in the database
+    try:
+      cursor = self.connection.cursor()
+      cursor.execute('SELECT schema_name FROM information_schema.schemata')
+      self.connection.commit()
+      return [row[0] for row in cursor.fetchall()]
+    except Exception:
+      LOG.exception('Failed to select schema_name from information_schema')
+      return [self._conn_params['database']]
 
 
   def get_tables(self, database, table_names=[]):
-    # Doesn't use database and only retrieves tables for database currently in use.
     cursor = self.connection.cursor()
     cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='%s'" % database)
     self.connection.commit()

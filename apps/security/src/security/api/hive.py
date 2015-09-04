@@ -101,6 +101,7 @@ def _to_sentry_privilege(privilege):
       'serverName': privilege['serverName'],
       'dbName': privilege['dbName'],
       'tableName': privilege['tableName'],
+      'columnName': privilege['columnName'],
       'URI': _massage_uri(privilege['URI']),
       'action': privilege['action'],
       'createTime': privilege['timestamp'],
@@ -123,6 +124,7 @@ def _hive_add_privileges(user, role, privileges):
             'action': privilege.get('action'),
             'scope': privilege.get('privilegeScope'),
             'table': privilege.get('tableName'),
+            'column': privilege.get('columnName'),
             'URI': privilege.get('URI'),
             'server': privilege.get('serverName'),
             'grantOption': privilege.get('grantOption') == 1
@@ -141,6 +143,20 @@ def _massage_uri(uri):
   return uri
 
 
+def _get_splitted_path(path):
+  parts = path.split('.')
+  db, table, column = '', '', ''
+
+  if len(parts) >= 1:
+    db = parts[0]
+  if len(parts) >= 2:
+    table = parts[1]
+  if len(parts) >= 3:
+    column = parts[2]
+
+  return db, table, column
+
+
 def _drop_sentry_privilege(user, role, authorizable):
   return get_api(user).alter_sentry_role_revoke_privilege(role['name'], _to_sentry_privilege(authorizable))
 
@@ -155,7 +171,7 @@ def create_role(request):
 
     api.create_sentry_role(role['name'])
 
-    privileges = [privilege for privilege in role['privileges'] if privilege['status'] != 'deleted']
+    privileges = [privilege for privilege in role['privileges'] if privilege['status'] not in ('deleted', 'alreadydeleted')]
     result['privileges'] = _hive_add_privileges(request.user, role, privileges)
     api.alter_sentry_role_add_groups(role['name'], role['groups'])
 
@@ -315,13 +331,11 @@ def bulk_delete_privileges(request):
     authorizableHierarchy = json.loads(request.POST['authorizableHierarchy'])
 
     for path in [path['path'] for path in checkedPaths]:
-      if '.' in path:
-        db, table = path.split('.')
-      else:
-        db, table = path, ''
+      db, table, column = _get_splitted_path(path)
       authorizableHierarchy.update({
         'db': db,
         'table': table,
+        'column': column,
       })
       get_api(request.user).drop_sentry_privileges(authorizableHierarchy)
     result['message'] = _('Privileges deleted.')
@@ -345,19 +359,19 @@ def bulk_add_privileges(request):
     privileges = [privilege for privilege in privileges if privilege['status'] == '']
 
     for path in [path['path'] for path in checkedPaths]:
-      if '.' in path:
-        db, table = path.split('.')
-      else:
-        db, table = path, ''
-      privilegeScope = 'TABLE' if table else 'DATABASE' if db else 'SERVER'
+      db, table, column = _get_splitted_path(path)
+
+      privilegeScope = 'COLUMN' if column else 'TABLE' if table else 'DATABASE' if db else 'SERVER'
       authorizableHierarchy.update({
         'db': db,
         'table': table,
+        'column': column,
       })
 
       for privilege in privileges:
         privilege['dbName'] = db
         privilege['tableName'] = table
+        privilege['columnName'] = column
         privilege['privilegeScope'] = privilegeScope
         _hive_add_privileges(request.user, {'name': privilege['roleName']}, [privilege])
 

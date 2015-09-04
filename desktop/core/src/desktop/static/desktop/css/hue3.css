@@ -1012,7 +1012,7 @@ div.box {
   margin-left: -200px;
   width: 400px;
   text-align: center;
-  z-index: 8000;
+  z-index: 11000;
   word-break: break-word;
 }
 
@@ -1352,6 +1352,7 @@ a#advanced-btn:hover {
   margin-bottom: 20px!important;
 }
 
+.blue,
 .card-heading-blue {
   color: #338BB8!important;
 }
@@ -1633,9 +1634,9 @@ html.modal-open {
   border-bottom-right-radius: 0px;
   border-bottom-left-radius: 0px;
   outline: none;
-  -webkit-box-shadow: none;
-  -moz-box-shadow: none;
-  box-shadow: none;
+  -webkit-box-shadow: 0px 0px 12px 0px rgba(0,0,0,0.75);
+  -moz-box-shadow: 0px 0px 12px 0px rgba(0,0,0,0.75);
+  box-shadow: 0px 0px 12px 0px rgba(0,0,0,0.75);
   -webkit-background-clip: padding-box;
   -moz-background-clip: padding-box;
   background-clip: padding-box;
@@ -1645,10 +1646,13 @@ html.modal-open {
   width: 500px;
   left: 50%;
   margin-left: -250px;
+  -webkit-box-shadow: none;
+  -moz-box-shadow: none;
+  box-shadow: none;
 }
 
 .demi-modal.fade {
-  top: -25%;
+  top: -500px;
   -webkit-transition: opacity 0.3s linear, top 0.3s ease-out;
   -moz-transition: opacity 0.3s linear, top 0.3s ease-out;
   -o-transition: opacity 0.3s linear, top 0.3s ease-out;
@@ -1677,6 +1681,16 @@ html.modal-open {
 
 .demi-modal .modal-footer {
   padding: 10px;
+}
+
+.demi-modal-chevron {
+  text-align:center;
+  width: 100%;
+  display: table;
+}
+
+.demi-modal-chevron:hover {
+  background-color: #F6F6F6;
 }
 
 .control-group.error .input-prepend .add-on i, .control-group.error .input-append .add-on i {
@@ -1931,4 +1945,125 @@ form.form-inline .modal-header .close {
 
 .no-margin {
   margin: 0;
+}
+
+.badge-left {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.badge-right {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+div.navigator ul.dropdown-menu {
+  overflow-y: auto;
+}
+
+div.navigator > ul > li.oozie > ul.dropdown-menu {
+  overflow-y: visible;
+}
+
+.mega-popover {
+  max-width: 1200px;
+}
+
+.mega-popover .content {
+  height: 300px;
+  overflow-y: scroll;
+}
+
+.mega-popover .popover-content {
+  min-height: 360px;
+  min-width: 440px;
+  max-width: 660px;
+}
+
+.mega-popover input[type="text"] {
+  border-radius: 20px;
+  margin: 0;
+  min-height: 26px;
+  padding-left: 12px;
+  width: 130px;
+}
+
+.inline-block {
+  display: inline-block;
+}
+
+pre {
+  border: none;
+  border-left: 5px solid #DDD;
+  border-radius: 0;
+}
+
+.hiveAutocompleteItem {
+  white-space: nowrap;
+}
+
+.reveals-actions:hover .hover-actions,
+.reveals-actions:hover .hover-actions-no-transition,
+.reveals-actions-2nd:hover .hover-actions-2nd,
+.reveals-actions-3rd:hover .hover-actions-3rd {
+  visibility: visible;
+  opacity: 1;
+}
+
+.hover-actions,
+.hover-actions-2nd,
+.hover-actions-3rd {
+  display: inline-block;
+  opacity: 0;
+  transition: opacity 0.2s linear;
+}
+
+/* Work-around for chrome with element out-transition not firing in .dropdown */
+.hover-actions-no-transition {
+  visibility: hidden;
+}
+
+.hover-actions > a,
+.hover-actions-2nd > a,
+.hover-actions-3rd > a {
+  color: #D1D1D1;
+  transition: color 0.2s ease;
+}
+
+.hover-actions > a:hover,
+.hover-actions-2nd > a:hover,
+.hover-actions-3rd > a:hover {
+  color: #338bb8;
+}
+
+.leaflet-search-command {
+  padding: 4px;
+  background-color: #FFF;
+}
+
+.leaflet-search-command input, .leaflet-search-command label {
+  margin-bottom: 0;
+}
+
+.clearable {
+  background: url(/static/desktop/art/clearField.png) no-repeat right -10px center;
+  border: 1px solid #999;
+  padding: 3px 18px 3px 4px;
+  border-radius: 3px;
+  transition: background 0.4s !important;
+}
+
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  .clearable {
+    background: url(/static/desktop/art/clearField@2x.png) no-repeat right -10px center;
+    background-size: 10px 10px;
+  }
+}
+
+.clearable.x {
+  background-position: right 5px center;
+}
+
+.clearable.onX {
+  cursor: pointer !important;
 }

@@ -19,13 +19,13 @@
   from django.utils.translation import ugettext as _
 %>
 
-<%namespace name="macros" file="macros.mako" />
 <%namespace name="actionbar" file="actionbar.mako" />
 
 ${ commonheader(_('Search Indexes'), "indexer", user, "29px") | n,unicode }
 
 <link rel="stylesheet" href="${ static('desktop/ext/chosen/chosen.min.css') }">
 <link rel="stylesheet" href="${ static('indexer/css/admin.css') }">
+
 <style type="text/css">
 .hueBreadcrumb {
   padding: 12px 14px;
@@ -293,12 +293,12 @@ ${ commonheader(_('Search Indexes'), "indexer", user, "29px") | n,unicode }
       <tr>
         <th width="25%" class="nowrap">${_('Name')}</th>
         <th width="25%" class="nowrap">${_('Type')}</th>
+        <th width="5%" class="nowrap">${_('ID')}</th>
         <th width="0%" class="nowrap">${_('Required')}</th>
         <th width="0%" class="nowrap">${_('Indexed')}</th>
         <th width="0%" class="nowrap">${_('Stored')}</th>
-        <th width="0%" class="nowrap">${_('Unique Key')}</th>
         <th width="0%" class="nowrap">${_('Default Field')}</th>
-        <th width="50%"></th>
+        <th width="45%"></th>
       </tr>
     </thead>
     <tbody data-bind="foreach: collection.fields">
@@ -306,20 +306,26 @@ ${ commonheader(_('Search Indexes'), "indexer", user, "29px") | n,unicode }
         <td data-bind="editableText: name">
           <span class="pull-left fa fa-pencil"></span>
         </td>
-        <td><select data-bind="options: $parent.fieldTypes, value: type, chosen: {}" name="type"></select></td>
-        <td><p class="text-center"><input data-bind="checked: required" type="checkbox"></p></td>
+        <td>
+          <select data-bind="options: $parent.fieldTypes, value: type, chosen: {}" name="type"></select>
+        </td>
+        <td>
+          <p class="text-center">
+            <input data-bind="checked: uniqueKeyField, visible: !uniqueKeyField()" name="unique-key" type="checkbox" />
+            <span class="fa" data-bind="css: {'fa-check': uniqueKeyField}">
+          </p>
+        </td>
+        <td>
+          <p class="text-center"><input data-bind="checked: required" type="checkbox"></p>
+        </td>
         <td>
           <p class="text-center">
             <input data-bind="checked: indexed, visible: !uniqueKeyField()" type="checkbox">
             <span class="fa" data-bind="css: {'fa-check': uniqueKeyField}">
           </p>
         </td>
-        <td><p class="text-center"><input data-bind="checked: stored" type="checkbox"></p></td>
         <td>
-          <p class="text-center">
-            <input data-bind="checked: uniqueKeyField, visible: !uniqueKeyField()" name="unique-key" type="checkbox" />
-            <span class="fa" data-bind="css: {'fa-check': uniqueKeyField}">
-          </p>
+          <p class="text-center"><input data-bind="checked: stored" type="checkbox"></p>
         </td>
         <td>
           <p class="text-center">
@@ -336,7 +342,12 @@ ${ commonheader(_('Search Indexes'), "indexer", user, "29px") | n,unicode }
 
   <br style="clear: both" />
   <br />
-  <a data-bind="click: collection.newField" href="javascript:void(0)" class="btn btn-info"><i class="fa fa-plus"></i>&nbsp;${_("Add")}</a>
+  <a data-bind="click: collection.newField" href="javascript:void(0)" class="btn btn-info">
+    <i class="fa fa-plus"></i>&nbsp;${_("Add")}
+  </a>
+  <a data-bind="click: collection.newIdField" href="javascript:void(0)" class="btn btn-info" title="${ _('Generate a random ID') }">
+    <i class="fa fa-plus"></i>&nbsp;${_("Add ID")}
+  </a>
 </script>
 <!--/ Create wizard -->
 <!--/ Create by file -->
@@ -363,11 +374,11 @@ ${ commonheader(_('Search Indexes'), "indexer", user, "29px") | n,unicode }
             <tr>
               <th width="25%" class="nowrap">${_('Name')}</th>
               <th width="25%" class="nowrap">${_('Type')}</th>
-              <th width="0%" class="nowrap">${_('Unique key field')}</th>
+              <th width="5%" class="nowrap">${_('ID')}</th>
               <th width="0%" class="nowrap">${_('Required')}</th>
               <th width="0%" class="nowrap">${_('Indexed')}</th>
               <th width="0%" class="nowrap">${_('Stored')}</th>
-              <th width="50%"></th>
+              <th width="45%"></th>
             </tr>
           </thead>
           <tbody data-bind="foreach: ko.utils.arrayFilter(collection().fields(), function(field) { return field.saved() })">
@@ -469,8 +480,8 @@ ${ commonheader(_('Search Indexes'), "indexer", user, "29px") | n,unicode }
 <script src="${ static('desktop/ext/chosen/chosen.jquery.min.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/jquery/plugins/jquery-ui-1.10.4.draggable-droppable-sortable.min.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/routie-0.3.0.min.js') }" type="text/javascript" charset="utf-8"></script>
-<script src="${ static('desktop/ext/js/knockout-min.js') }" type="text/javascript" charset="utf-8"></script>
-<script src="${ static('desktop/ext/js/knockout.mapping-2.3.2.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/ext/js/knockout.min.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/ext/js/knockout-mapping.min.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/knockout-sortable.min.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('indexer/js/lib.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('indexer/js/collections.js') }" type="text/javascript" charset="utf-8"></script>

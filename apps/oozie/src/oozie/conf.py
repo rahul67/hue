@@ -33,6 +33,13 @@ DEFINITION_XSLT_DIR = Config(
   private=True
 )
 
+DEFINITION_XSLT2_DIR = Config(
+  key="definition_xslt2_dir",
+  default=os.path.join(os.path.dirname(__file__), "importlib", "xslt2"),
+  help=_t("Location on local FS where the xslt files are stored for workflow import."),
+  private=True
+)
+
 LOCAL_SAMPLE_DIR = Config(
   key="local_data_dir",
   default=os.path.join(os.path.dirname(__file__), "..", "..", "examples"),
@@ -55,7 +62,7 @@ REMOTE_SAMPLE_DIR = Config(
 
 OOZIE_JOBS_COUNT = Config(
   key='oozie_jobs_count',
-  default=100,
+  default=50,
   type=int,
   help=_t('Maximum number of Oozie workflows or coodinators or bundles to retrieve in one API call.')
 )

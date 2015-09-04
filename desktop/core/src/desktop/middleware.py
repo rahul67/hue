@@ -15,12 +15,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import absolute_import
+
 import inspect
 import json
 import logging
 import os.path
 import re
 import tempfile
+import time
 
 import kerberos
 
@@ -44,11 +47,12 @@ import desktop.views
 import desktop.conf
 from desktop.context_processors import get_app_name
 from desktop.lib import apputil, i18n
-from desktop.lib.django_util import render, render_json, is_jframe_request
+from desktop.lib.django_util import render, render_json, is_jframe_request, get_username_re_rule, get_groupname_re_rule
 from desktop.lib.exceptions import StructuredException
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.log.access import access_log, log_page_hit
 from desktop import appmanager
+from desktop import metrics
 from hadoop import cluster
 from desktop.log import get_audit_logger
 
@@ -338,32 +342,105 @@ class JsonMessage(object):
 
 class AuditLoggingMiddleware(object):
 
+  username_re = get_username_re_rule()
+  groupname_re = get_groupname_re_rule()
+
+  operations = {
+    '/accounts/login': 'USER_LOGIN',
+    '/accounts/logout': 'USER_LOGOUT',
+    '/useradmin/users/add_ldap_users': 'ADD_LDAP_USERS',
+    '/useradmin/users/add_ldap_groups': 'ADD_LDAP_GROUPS',
+    '/useradmin/users/sync_ldap_users_groups': 'SYNC_LDAP_USERS_GROUPS',
+    '/useradmin/users/new': 'CREATE_USER',
+    '/useradmin/groups/new': 'CREATE_GROUP',
+    '/useradmin/users/delete': 'DELETE_USER',
+    '/useradmin/groups/delete': 'DELETE_GROUP'
+  }
+
+  operation_patterns = {
+    '/useradmin/permissions/edit/(?P<app>.*)/(?P<priv>.*)': 'EDIT_PERMISSION',
+    '/useradmin/users/edit/(?P<username>%s)' % (username_re,): 'EDIT_USER',
+    '/useradmin/groups/edit/(?P<name>%s)' % (groupname_re,): 'EDIT_GROUP'
+  }
+
   def __init__(self):
-    from desktop.conf import AUDIT_EVENT_LOG_DIR
+    from desktop.conf import AUDIT_EVENT_LOG_DIR, SERVER_USER
+
+    self.impersonator = SERVER_USER.get()
 
     if not AUDIT_EVENT_LOG_DIR.get():
       LOG.info('Unloading AuditLoggingMiddleware')
       raise exceptions.MiddlewareNotUsed
 
-  def process_response(self, request, response):
+  def process_view(self, request, view_func, view_args, view_kwargs):
     try:
-      audit_logger = get_audit_logger()
-      audit_logger.debug(JsonMessage(**{
-          datetime.utcnow().strftime('%s'): {
-            'user': request.user.username  if hasattr(request, 'user') else 'anonymous',
-            "status": response.status_code,
-            "impersonator": None,
-            "ip_address": request.META.get('REMOTE_ADDR'),
-            "authorization_failure": response.status_code == 401,
-            "service": get_app_name(request),
-            "url": request.path,
-          }
-      }))
-      response['audited'] = True
+      operation = self._get_operation(request.path)
+      if operation == 'USER_LOGOUT':
+        self._log_message(operation, request)
+    except Exception, e:
+      LOG.error('Could not audit the request: %s' % e)
+
+    return None
+
+  def process_response(self, request, response):
+    response['audited'] = False
+    try:
+      operation = self._get_operation(request.path)
+      if request.method == 'POST' and operation and operation != 'USER_LOGOUT':
+        self._log_message(operation, request, response)
+        response['audited'] = True
     except Exception, e:
       LOG.error('Could not audit the request: %s' % e)
     return response
 
+  def _log_message(self, operation, request, response=None):
+    audit_logger = get_audit_logger()
+
+    allowed = True
+    status = 200
+    if response is not None:
+      allowed = response.status_code != 401
+      status = response.status_code
+
+    audit_logger.debug(JsonMessage(**{
+      'username': self._get_username(request),
+      'impersonator': self.impersonator,
+      'ipAddress': self._get_client_ip(request),
+      'operation': operation,
+      'eventTime': self._milliseconds_since_epoch(),
+      'allowed': allowed,
+      'statusCode': status,
+      'service': get_app_name(request),
+      'url': request.path
+    }))
+
+  def _get_client_ip(self, request):
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        x_forwarded_for = x_forwarded_for.split(',')[0]
+    return request.META.get('HTTP_CLIENT_IP') or x_forwarded_for or request.META.get('REMOTE_ADDR')
+
+  def _get_username(self, request):
+    if hasattr(request, 'user') and not request.user.is_anonymous():
+      return request.user.get_username()
+    else:
+      return 'anonymous'
+
+  def _milliseconds_since_epoch(self):
+    return int(time.time() * 1000)
+
+  def _get_operation(self, path):
+    url = path.rstrip('/')
+
+    if url in AuditLoggingMiddleware.operations:
+      return AuditLoggingMiddleware.operations[url]
+    else:
+      for regex, operation in AuditLoggingMiddleware.operation_patterns.items():
+        pattern = re.compile(regex)
+        if pattern.match(url):
+          return operation
+
+    return None
 
 try:
   import tidylib
@@ -435,6 +512,7 @@ class HtmlValidationMiddleware(object):
       fn = urlresolvers.resolve(request.path)[0]
       fn_name = '%s.%s' % (fn.__module__, fn.__name__)
     except:
+      LOG.exception('failed to resolve url')
       fn_name = '<unresolved_url>'
 
     # Write the two versions of html out for offline debugging
@@ -476,7 +554,7 @@ class SpnegoMiddleware(object):
   """
 
   def __init__(self):
-    if not 'SpnegoDjangoBackend' in desktop.conf.AUTH.BACKEND.get():
+    if not 'desktop.auth.backend.SpnegoDjangoBackend' in desktop.conf.AUTH.BACKEND.get():
       LOG.info('Unloading SpnegoMiddleware')
       raise exceptions.MiddlewareNotUsed
 
@@ -584,7 +662,7 @@ class HueRemoteUserMiddleware(RemoteUserMiddleware):
   in use.
   """
   def __init__(self):
-    if not 'RemoteUserDjangoBackend' in desktop.conf.AUTH.BACKEND.get():
+    if not 'desktop.auth.backend.RemoteUserDjangoBackend' in desktop.conf.AUTH.BACKEND.get():
       LOG.info('Unloading HueRemoteUserMiddleware')
       raise exceptions.MiddlewareNotUsed
     self.header = desktop.conf.AUTH.REMOTE_USER_HEADER.get()
@@ -619,3 +697,22 @@ class EnsureSafeRedirectURLMiddleware(object):
       return response
     else:
       return response
+
+
+class MetricsMiddleware(object):
+  """
+  Middleware to track the number of active requests.
+  """
+
+  def process_request(self, request):
+    self._response_timer = metrics.response_time.time()
+    metrics.active_requests.inc()
+
+  def process_exception(self, request, exception):
+    self._response_timer.stop()
+    metrics.request_exceptions.inc()
+
+  def process_response(self, request, response):
+    self._response_timer.stop()
+    metrics.active_requests.dec()
+    return response

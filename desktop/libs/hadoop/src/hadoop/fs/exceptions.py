@@ -16,9 +16,12 @@
 # limitations under the License.
 
 import json
+import logging
 
 from desktop.lib.exceptions import StructuredException
 from desktop.lib.rest.http_client import RestException
+
+LOG = logging.getLogger(__name__)
 
 
 class PermissionDeniedException(StructuredException):
@@ -32,11 +35,17 @@ class PermissionDeniedException(StructuredException):
 class WebHdfsException(RestException):
   def __init__(self, error):
     RestException.__init__(self, error)
+    self.server_exc = None
 
     try:
-      json_body = json.loads(self._message)['RemoteException']
-      self.server_exc = json_body['exception']
-      self._message = "%s: %s" % (self.server_exc, json_body['message'])
-    except:
-      # Don't mask the original exception
-      self.server_exc = None
+      json_body = json.loads(self._message)
+    except ValueError:
+      pass
+    else:
+      remote_exception = json_body.get('RemoteException', {})
+      exception = remote_exception.get('exception')
+      message = remote_exception.get('message', '')
+
+      if exception:
+        self.server_exc = exception
+        self._message = "%s: %s" % (self.server_exc, message)

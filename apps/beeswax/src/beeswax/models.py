@@ -83,7 +83,7 @@ class QueryHistory(models.Model):
   notify = models.BooleanField(default=False)                        # Notify on completion
 
   is_redacted = models.BooleanField(default=False)
-
+  extra = models.TextField(default='{}')                   # Json fields for extra properties
 
   class Meta:
     ordering = ['-submission_date']
@@ -137,7 +137,7 @@ class QueryHistory(models.Model):
     query.hql_query = hql_query
     self.design.data = query.dumps()
     self.query = hql_query
- 
+
   def is_finished(self):
     is_statement_finished = not self.is_running()
 
@@ -187,6 +187,14 @@ class QueryHistory(models.Model):
         self.is_redacted = True
 
     super(QueryHistory, self).save(*args, **kwargs)
+
+  def update_extra(self, key, val):
+    extra = json.loads(self.extra)
+    extra[key] = val
+    self.extra = json.dumps(extra)
+
+  def get_extra(self, key):
+    return json.loads(self.extra).get(key)
 
 
 def make_query_context(type, info):
@@ -255,7 +263,7 @@ class SavedQuery(models.Model):
   owner = models.ForeignKey(User, db_index=True)
   # Data is a json of dictionary. See the beeswax.design module.
   data = models.TextField(max_length=65536)
-  name = models.CharField(max_length=64)
+  name = models.CharField(max_length=80)
   desc = models.TextField(max_length=1024)
   mtime = models.DateTimeField(auto_now=True)
   # An auto design is a place-holder for things users submit but not saved.
@@ -343,6 +351,7 @@ class SavedQuery(models.Model):
     try:
       return make_query_context('design', self.id)
     except:
+      LOG.exception('failed to make query context')
       return ""
 
   def get_absolute_url(self):
@@ -393,6 +402,7 @@ class Session(models.Model):
   server_protocol_version = models.SmallIntegerField(default=0)
   last_used = models.DateTimeField(auto_now=True, db_index=True, verbose_name=_t('Last used'))
   application = models.CharField(max_length=128, help_text=_t('Application we communicate with.'), default='beeswax')
+  properties = models.TextField(default='{}')
 
   objects = SessionManager()
 

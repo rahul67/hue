@@ -35,7 +35,14 @@ CACHED_LDAP_CONN = None
 
 
 def get_connection_from_server(server=None):
-  ldap_config = desktop.conf.LDAP.LDAP_SERVERS.get()[server] if server else desktop.conf.LDAP
+
+  ldap_servers = desktop.conf.LDAP.LDAP_SERVERS.get()
+
+  if server and ldap_servers:
+    ldap_config = ldap_servers[server]
+  else:
+    ldap_config = desktop.conf.LDAP
+     
   return get_connection(ldap_config)
 
 def get_connection(ldap_config):
@@ -120,14 +127,17 @@ class LdapConnection(object):
       try:
         self.ldap_handle.simple_bind_s(bind_user, bind_password)
       except:
-        raise RuntimeError("Failed to bind to LDAP server as user %s" %
-            bind_user)
+        msg = "Failed to bind to LDAP server as user %s" % bind_user
+        LOG.exception(msg)
+        raise RuntimeError(msg)
     else:
       try:
         # Do anonymous bind
         self.ldap_handle.simple_bind_s('','')
       except:
-        raise RuntimeError("Failed to bind to LDAP server anonymously")
+        msg = "Failed to bind to LDAP server anonymously"
+        LOG.exception(msg)
+        raise RuntimeError(msg)
 
   def _get_search_params(self, name, attr, find_by_dn=False):
     """
@@ -211,9 +221,13 @@ class LdapConnection(object):
             LOG.warn('Could not find %s in ldap attributes' % group_name_attr)
             continue
 
+          group_name = data[group_name_attr][0]
+          if desktop.conf.LDAP.FORCE_USERNAME_LOWERCASE.get():
+            group_name = group_name.lower()
+
           ldap_info = {
             'dn': dn,
-            'name': data[group_name_attr][0]
+            'name': group_name
           }
 
           if group_member_attr in data and 'posixGroup' not in data['objectClass']:
@@ -316,6 +330,8 @@ class LdapConnection(object):
 
     # Allow wild cards on non distinguished names
     sanitized_name = ldap.filter.escape_filter_chars(groupname_pattern).replace(r'\2a', r'*')
+    # Fix issue where \, is converted to \5c,
+    sanitized_name = sanitized_name.replace(r'\5c,', r'\2c')
     search_dn, group_name_filter = self._get_search_params(sanitized_name, search_attr, find_by_dn)
     ldap_filter = '(&' + group_filter + group_name_filter + ')'
     attrlist = ['objectClass', 'dn', 'memberUid', group_member_attr, group_name_attr]

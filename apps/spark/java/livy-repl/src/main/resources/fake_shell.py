@@ -1,5 +1,22 @@
+# Licensed to Cloudera, Inc. under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  Cloudera, Inc. licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import ast
 import cStringIO
+import collections
 import datetime
 import decimal
 import json
@@ -8,23 +25,17 @@ import sys
 import traceback
 
 logging.basicConfig()
-logger = logging.getLogger('fake_shell')
+LOG = logging.getLogger('fake_shell')
 
 global_dict = {}
 
-execution_count = 0
-
 
 def execute_reply(status, content):
-    global execution_count
-    execution_count += 1
-
     return {
         'msg_type': 'execute_reply',
         'content': dict(
             content,
             status=status,
-            execution_count=execution_count - 1
         )
     }
 
@@ -34,7 +45,7 @@ def execute_reply_ok(data):
     })
 
 def execute_reply_error(exc_type, exc_value, tb):
-    logger.error('execute_reply', exc_info=True)
+    LOG.error('execute_reply', exc_info=True)
     return execute_reply('error', {
         'ename': unicode(exc_type.__name__),
         'evalue': unicode(exc_value),
@@ -44,7 +55,6 @@ def execute_reply_error(exc_type, exc_value, tb):
 
 def execute(code):
     try:
-        code = ast.parse(code)
         to_run_exec, to_run_single = code.body[:-1], code.body[-1:]
 
         for node in to_run_exec:
@@ -57,6 +67,8 @@ def execute(code):
             code = compile(mod, '<stdin>', 'single')
             exec code in global_dict
     except:
+        # We don't need to log the exception because we're just executing user
+        # code and passing the error along.
         return execute_reply_error(*sys.exc_info())
 
     stdout = fake_stdout.getvalue()
@@ -75,7 +87,23 @@ def execute(code):
 
     return execute_reply_ok({
         'text/plain': output.rstrip(),
-        })
+    })
+
+
+def execute_magic(line):
+    parts = line[1:].split(' ', 1)
+    if len(parts) == 1:
+        magic, rest = parts[0], ()
+    else:
+        magic, rest = parts[0], (parts[1],)
+
+    try:
+        handler = magic_router[magic]
+    except KeyError:
+        exc_type, exc_value, tb = sys.exc_info()
+        return execute_reply_error(exc_type, exc_value, [])
+    else:
+        return handler(*rest)
 
 
 def execute_request(content):
@@ -85,33 +113,38 @@ def execute_request(content):
         exc_type, exc_value, tb = sys.exc_info()
         return execute_reply_error(exc_type, exc_value, [])
 
-    lines = code.split('\n')
+    lines = collections.deque(code.rstrip().split('\n'))
+    last_line = ''
+    result = None
 
-    if lines and lines[-1].startswith('%'):
-        code, magic = lines[:-1], lines[-1]
+    while lines:
+        line = last_line + lines.popleft()
 
-        # Make sure to execute the other lines first.
-        if code:
-            result = execute('\n'.join(code))
-            if result['content']['status'] != 'ok':
-                return result
+        if line.rstrip() == '':
+            continue
 
-        parts = magic[1:].split(' ', 1)
-        if len(parts) == 1:
-            magic, rest = parts[0], ()
+        if line.startswith('%'):
+            result = execute_magic(line)
         else:
-            magic, rest = parts[0], (parts[1],)
+            try:
+                code = ast.parse(line)
+            except SyntaxError:
+                last_line = line + '\n'
+                continue
+            else:
+                result = execute(code)
 
-        try:
-            handler = magic_router[magic]
-        except KeyError:
-            exc_type, exc_value, tb = sys.exc_info()
-            return execute_reply_error(exc_type, exc_value, [])
+        if result['content']['status'] == 'ok':
+            last_line = ''
         else:
-            return handler(*rest)
+            return result
+
+    if result is None:
+        return execute_reply_ok({
+            'text/plain': '',
+        })
     else:
-        return execute(code)
-
+        return result
 
 def magic_table_convert(value):
     try:
@@ -203,7 +236,7 @@ def magic_table(name):
         if isinstance(row, (list, tuple)):
             iterator = enumerate(row)
         else:
-            iterator = row.iteritems()
+            iterator = sorted(row.iteritems())
 
         for name, col in iterator:
             col_type, col = magic_table_convert(col)
@@ -235,6 +268,10 @@ def magic_table(name):
     })
 
 
+def shutdown_request(content):
+    sys.exit()
+
+
 magic_router = {
     'table': magic_table,
 }
@@ -242,6 +279,7 @@ magic_router = {
 
 msg_type_router = {
     'execute_request': execute_request,
+    'shutdown_request': shutdown_request,
 }
 
 sys_stdin = sys.stdin
@@ -280,25 +318,25 @@ try:
         try:
             msg = json.loads(line)
         except ValueError:
-            logger.error('failed to parse message', exc_info=True)
+            LOG.error('failed to parse message', exc_info=True)
             continue
 
         try:
             msg_type = msg['msg_type']
         except KeyError:
-            logger.error('missing message type', exc_info=True)
+            LOG.error('missing message type', exc_info=True)
             continue
 
         try:
             content = msg['content']
         except KeyError:
-            logger.error('missing content', exc_info=True)
+            LOG.error('missing content', exc_info=True)
             continue
 
         try:
             handler = msg_type_router[msg_type]
         except KeyError:
-            logger.error('unknown message type: %s', msg_type)
+            LOG.error('unknown message type: %s', msg_type)
             continue
 
         response = handler(content)
@@ -307,7 +345,6 @@ try:
         except ValueError, e:
             response = json.dumps({
                 'msg_type': 'inspect_reply',
-                'execution_count': execution_count - 1,
                 'content': {
                     'status': 'error',
                     'ename': 'ValueError',
@@ -319,6 +356,9 @@ try:
         print >> sys_stdout, response
         sys_stdout.flush()
 finally:
+    if 'sc' in global_dict:
+        global_dict['sc'].stop()
+
     sys.stdin = sys_stdin
     sys.stdout = sys_stdout
     sys.stderr = sys_stderr

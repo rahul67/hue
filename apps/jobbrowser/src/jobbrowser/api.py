@@ -146,9 +146,11 @@ class JtApi(JobBrowserApi):
   def filter_jobs(self, user, jobs, **kwargs):
     check_permission = not SHARE_JOBS.get() and not user.is_superuser
 
+    limit = kwargs.pop('limit', 10000)
+
     return [Job.from_thriftjob(self.jt, j)
             for j in self._filter_jobs(jobs, **kwargs)
-            if not check_permission or user.is_superuser or j.profile.user == user.username]
+            if not check_permission or user.is_superuser or j.profile.user == user.username][:limit]
 
   def _filter_jobs(self, jobs, username=None, text=None):
     def predicate(job):
@@ -211,7 +213,7 @@ class YarnApi(JobBrowserApi):
   """
   def __init__(self, user):
     self.user = user
-    self.resource_manager_api = resource_manager_api.get_resource_manager()
+    self.resource_manager_api = resource_manager_api.get_resource_manager(user)
     self.mapreduce_api = mapreduce_api.get_mapreduce_api()
     self.history_server_api = history_server_api.get_history_server_api()
 
@@ -227,6 +229,8 @@ class YarnApi(JobBrowserApi):
       filters['user'] = kwargs['username']
     if kwargs['state'] and kwargs['state'] != 'all':
       filters['finalStatus'] = state_filters[kwargs['state']]
+    if kwargs.get('limit'):
+      filters['limit'] = kwargs['limit']
 
     json = self.resource_manager_api.apps(**filters)
     if type(json) == str and 'This is standby RM' in json:
@@ -298,7 +302,7 @@ class YarnApi(JobBrowserApi):
     return self.get_job(jobid).task(task_id)
 
   def get_tracker(self, node_manager_http_address, container_id):
-    api = node_manager_api.get_resource_manager_api('http://' + node_manager_http_address)
+    api = node_manager_api.get_node_manager_api('http://' + node_manager_http_address)
     return Container(api.container(container_id))
 
 

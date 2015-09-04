@@ -14,7 +14,7 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
-from desktop.views import commonheader, commonfooter
+from desktop.views import commonheader, commonfooter, antixss
 from django.template.defaultfilters import date, time
 from django.utils.translation import ugettext as _
 %>
@@ -41,7 +41,9 @@ ${layout.menubar(section='users')}
       </%def>
       <%def name="creation()">
         %if user.is_superuser:
-            <a href="${ url('useradmin.views.edit_user') }" class="btn"><i class="fa fa-user"></i> ${_('Add user')}</a>
+            % if not is_ldap_setup:
+                <a href="${ url('useradmin.views.edit_user') }" class="btn"><i class="fa fa-user"></i> ${_('Add user')}</a>
+            %endif
 
             % if is_ldap_setup:
             <a href="${ url('useradmin.views.add_ldap_users') }" class="btn"><i
@@ -51,9 +53,9 @@ ${layout.menubar(section='users')}
                 class="fa fa-refresh"></i> ${_('Sync LDAP users/groups')}</a>
             % endif
 
-            <a href="http://gethue.tumblr.com/post/75499679342/making-hadoop-accessible-to-your-employees-with-ldap" class="btn"
+            <a href="http://gethue.com/making-hadoop-accessible-to-your-employees-with-ldap/" class="btn"
               title="${ ('Learn how to integrate Hue with your company') }" target="_blank">
-              <i class="fa fa-question-circle"> LDAP</i>
+              <i class="fa fa-question-circle"></i> LDAP
             </a>
         %endif
       </%def>
@@ -136,12 +138,12 @@ ${layout.menubar(section='users')}
 
 </div>
 
-<script src="${ static('desktop/ext/js/knockout-min.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/ext/js/knockout.min.js') }" type="text/javascript" charset="utf-8"></script>
 
 <script type="text/javascript" charset="utf-8">
   $(document).ready(function () {
     var viewModel = {
-      availableUsers: ko.observableArray(${ users_json | n }),
+      availableUsers: ko.observableArray(${ users_json | n,antixss }),
       chosenUsers: ko.observableArray([])
     };
 

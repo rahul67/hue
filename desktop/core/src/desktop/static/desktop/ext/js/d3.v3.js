@@ -4638,7 +4638,9 @@ d3 = function() {
   d3.transform = function(string) {
     var g = d3_document.createElementNS(d3.ns.prefix.svg, "g");
     return (d3.transform = function(string) {
-      g.setAttribute("transform", string);
+      if (string != null && string.indexOf("null") == -1 && string.indexOf("NaN") == -1) {
+        g.setAttribute("transform", string);
+      }
       var t = g.transform.baseVal.consolidate();
       return new d3_transform(t ? t.matrix : d3_transformIdentity);
     })(string);
@@ -5587,7 +5589,9 @@ d3 = function() {
       for (j = 0; j < m; ++j) {
         out.call(stack, series[0][j], o = offsets[j], points[0][j][1]);
         for (i = 1; i < n; ++i) {
-          out.call(stack, series[i][j], o += points[i - 1][j][1], points[i][j][1]);
+          if (typeof series[i][j] != 'undefined'){
+            out.call(stack, series[i][j], o += points[i - 1][j][1], points[i][j][1]);
+          }
         }
       }
       return data;

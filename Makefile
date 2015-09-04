@@ -129,7 +129,7 @@ virtual-env: $(BLD_DIR_ENV)/stamp
 $(BLD_DIR_ENV)/stamp:
 	@echo "--- Creating virtual environment at $(BLD_DIR_ENV)"
 	$(SYS_PYTHON) $(VIRTUAL_BOOTSTRAP) \
-		$(VIRTUALENV_OPTS) --no-site-packages $(BLD_DIR_ENV)
+		$(VIRTUALENV_OPTS) --system-site-packages $(BLD_DIR_ENV)
 	@touch $@
 	@echo "--- $(BLD_DIR_ENV) ready"
 
@@ -225,12 +225,13 @@ locales:
 
 .PHONY: clean
 clean:
-	@rm -rf $(BLD_DIR_ENV)
 	@$(MAKE) -C desktop clean
 	@$(MAKE) -C apps clean
 # <<<< DEV ONLY
 	@$(MAKE) -C docs clean
 # END DEV ONLY >>>>
+	@rm -rf $(BLD_DIR_ENV)
+	@rm -rf $(STATIC_DIR)
 
 #
 # Note: It is important for clean targets to *ONLY* clean products of the
@@ -239,9 +240,9 @@ clean:
 .PHONY: distclean
 distclean: clean
 	@# Remove the other directories in build/
-	@rm -rf $(BLD_DIR)
 	@$(MAKE) -C desktop distclean
 	@$(MAKE) -C apps distclean
+	@rm -rf $(BLD_DIR)
 
 .PHONY: ext-clean
 ext-clean:

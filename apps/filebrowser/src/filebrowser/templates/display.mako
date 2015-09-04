@@ -35,7 +35,7 @@ ${ fb_components.menubar() }
 <div class="container-fluid">
   <div class="row-fluid">
     <div class="span2">
-      ${ fb_components.file_sidebar(path_enc, dirname_enc, stats, view) }
+      ${ fb_components.file_sidebar(path_enc, dirname_enc, stats, show_download_button, view) }
     </div>
     <div class="span10">
       <div class="card card-small" style="margin-bottom: 5px">
@@ -98,7 +98,7 @@ ${ fb_components.menubar() }
 </div>
 
 <script src="${ static('desktop/ext/js/jquery/plugins/jquery.visible.min.js') }" type="text/javascript" charset="utf-8"></script>
-<script src="${ static('desktop/ext/js/knockout-min.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/ext/js/knockout.min.js') }" type="text/javascript" charset="utf-8"></script>
 <script type="text/javascript" charset="utf-8">
 (function () {
   <%

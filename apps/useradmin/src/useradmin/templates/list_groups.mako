@@ -14,10 +14,11 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
-from desktop.views import commonheader, commonfooter
+from desktop.views import commonheader, commonfooter, antixss
 from django.utils.translation import ugettext as _
 from useradmin.models import group_permissions
 %>
+
 
 <%namespace name="actionbar" file="actionbar.mako" />
 <%namespace name="layout" file="layout.mako" />
@@ -49,7 +50,7 @@ ${layout.menubar(section='groups')}
           % endif
           <a href="http://gethue.com/making-hadoop-accessible-to-your-employees-with-ldap/" class="btn"
             title="${ ('Learn how to integrate Hue with your company') }" target="_blank">
-            <i class="fa fa-question-circle"> LDAP</i>
+            <i class="fa fa-question-circle"></i> LDAP
           </a>
         %endif
       </%def>
@@ -116,20 +117,20 @@ ${layout.menubar(section='groups')}
       <input type="submit" class="btn btn-danger" value="${_('Yes')}"/>
     </div>
     <div class="hide">
-      <select name="group_names" data-bind="options: availableUsers, selectedOptions: chosenUsers" multiple="true"></select>
+      <select name="group_names" data-bind="options: availableGroups, selectedOptions: chosenGroups" multiple="true"></select>
     </div>
   </form>
 </div>
 
-<script src="${ static('desktop/ext/js/knockout-min.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/ext/js/knockout.min.js') }" type="text/javascript" charset="utf-8"></script>
 
 <script type="text/javascript" charset="utf-8">
   var viewModel;
 
   $(document).ready(function () {
     viewModel = {
-      availableUsers: ko.observableArray(${ groups_json | n }),
-      chosenUsers: ko.observableArray([])
+      availableGroups: ko.observableArray(${ groups_json | n,antixss }),
+      chosenGroups: ko.observableArray([])
     };
 
     ko.applyBindings(viewModel);
@@ -189,10 +190,10 @@ ${layout.menubar(section='groups')}
     }
 
     $("#deleteGroupBtn").click(function () {
-      viewModel.chosenUsers.removeAll();
+      viewModel.chosenGroups.removeAll();
 
       $(".hueCheckbox[checked='checked']").each(function (index) {
-        viewModel.chosenUsers.push($(this).data("name"));
+        viewModel.chosenGroups.push($(this).data("name").toString()); // needed for numeric group names
       });
 
       $("#deleteGroup").modal("show");

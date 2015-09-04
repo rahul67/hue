@@ -20,30 +20,28 @@ import json
 import logging
 import os
 import shutil
-import subprocess
 
 from django.utils.translation import ugettext as _
 
 from desktop.lib.exceptions_renderable import PopupException
 from libsolr.api import SolrApi
+from libzookeeper.conf import ENSEMBLE
+from libzookeeper.models import ZookeeperClient
 from search.conf import SOLR_URL, SECURITY_ENABLED
 
-from indexer import conf, utils
+from indexer.conf import CORE_INSTANCE_DIR
+from indexer.utils import copy_configs, field_values_from_log, field_values_from_separated_file
 
 
 LOG = logging.getLogger(__name__)
 MAX_UPLOAD_SIZE = 100 * 1024 * 1024 # 100 MB
 ALLOWED_FIELD_ATTRIBUTES = set(['name', 'type', 'indexed', 'stored'])
 FLAGS = [('I', 'indexed'), ('T', 'tokenized'), ('S', 'stored')]
+ZK_SOLR_CONFIG_NAMESPACE = 'configs'
 
 
-def get_solrctl_path():
-  solrctl_path = conf.SOLRCTL_PATH.get()
-  if solrctl_path is None:
-    LOG.error("Could not find solrctl executable")
-    raise PopupException(_('Could not find solrctl executable'))
-
-  return solrctl_path
+def get_solr_ensemble():
+  return '%s/solr' % ENSEMBLE.get()
 
 
 class CollectionManagerController(object):
@@ -131,46 +129,35 @@ class CollectionManagerController(object):
       # solrcloud mode
 
       # Need to remove path afterwards
-      tmp_path, solr_config_path = utils.copy_configs(fields, unique_key_field, df, True)
+      tmp_path, solr_config_path = copy_configs(fields, unique_key_field, df, True)
 
-      # Create instance directory.
-      solrctl_path = get_solrctl_path()
-
-      process = subprocess.Popen([solrctl_path, "instancedir", "--create", name, solr_config_path],
-                                 stdout=subprocess.PIPE,
-                                 stderr=subprocess.PIPE,
-                                 env={
-                                   'SOLR_ZK_ENSEMBLE': conf.SOLR_ZK_ENSEMBLE.get()
-                                 })
-      status = process.wait()
+      zc = ZookeeperClient(hosts=get_solr_ensemble(), read_only=False)
+      root_node = '%s/%s' % (ZK_SOLR_CONFIG_NAMESPACE, name)
+      config_root_path = '%s/%s' % (solr_config_path, 'conf')
+      try:
+        zc.copy_path(root_node, config_root_path)
+      except Exception, e:
+        zc.delete_path(root_node)
+        raise PopupException(_('Error in copying Solr configurations.'), detail=e)
 
       # Don't want directories laying around
       shutil.rmtree(tmp_path)
 
-      if status != 0:
-        LOG.error("Could not create instance directory.\nOutput: %s\nError: %s" % process.communicate())
-        raise PopupException(_('Could not create instance directory. '
-                               'Check if solr_zk_ensemble and solrctl_path are correct in Hue config [indexer].'))
-
       api = SolrApi(SOLR_URL.get(), self.user, SECURITY_ENABLED.get())
       if not api.create_collection(name):
         # Delete instance directory if we couldn't create a collection.
-        process = subprocess.Popen([solrctl_path, "instancedir", "--delete", name],
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE,
-                                   env={
-                                     'SOLR_ZK_ENSEMBLE': conf.SOLR_ZK_ENSEMBLE.get()
-                                   })
-        if process.wait() != 0:
-          LOG.error("Cloud not delete collection.\nOutput: %s\nError: %s" % process.communicate())
+        try:
+          zc.delete_path(root_node)
+        except Exception, e:
+          raise PopupException(_('Error in deleting Solr configurations.'), detail=e)
         raise PopupException(_('Could not create collection. Check error logs for more info.'))
     else:
       # Non-solrcloud mode
       # Create instance directory locally.
-      instancedir = os.path.join(conf.CORE_INSTANCE_DIR.get(), name)
+      instancedir = os.path.join(CORE_INSTANCE_DIR.get(), name)
       if os.path.exists(instancedir):
         raise PopupException(_("Instance directory %s already exists! Please remove it from the file system.") % instancedir)
-      tmp_path, solr_config_path = utils.copy_configs(fields, unique_key_field, df, False)
+      tmp_path, solr_config_path = copy_configs(fields, unique_key_field, df, False)
       shutil.move(solr_config_path, instancedir)
       shutil.rmtree(tmp_path)
 
@@ -190,17 +177,14 @@ class CollectionManagerController(object):
 
     if api.remove_collection(name):
       # Delete instance directory.
-      solrctl_path = get_solrctl_path()
-
-      process = subprocess.Popen([solrctl_path, "instancedir", "--delete", name],
-                                 stdout=subprocess.PIPE,
-                                 stderr=subprocess.PIPE,
-                                 env={
-                                   'SOLR_ZK_ENSEMBLE': conf.SOLR_ZK_ENSEMBLE.get()
-                                 })
-      if process.wait() != 0:
-        LOG.error("Cloud not delete instance directory.\nOutput stream: %s\nError stream: %s" % process.communicate())
-        raise PopupException(_('Could not create instance directory. Check error logs for more info.'))
+      try:
+        root_node = '%s/%s' % (ZK_SOLR_CONFIG_NAMESPACE, name)
+        zc = ZookeeperClient(hosts=get_solr_ensemble(), read_only=False)
+        zc.delete_path(root_node)
+      except Exception, e:
+        # Re-create collection so that we don't have an orphan config
+        api.add_collection(name)
+        raise PopupException(_('Error in deleting Solr configurations.'), detail=e)
     else:
       raise PopupException(_('Could not remove collection. Check error logs for more info.'))
 
@@ -240,10 +224,10 @@ class CollectionManagerController(object):
         fh = fs.open(path)
         if data_type == 'log':
           # Transform to JSON then update
-          data = json.dumps([value for value in utils.field_values_from_log(fh, fields)])
+          data = json.dumps([value for value in field_values_from_log(fh, fields)])
           content_type = 'json'
         elif data_type == 'separated':
-          data = json.dumps([value for value in utils.field_values_from_separated_file(fh, kwargs.get('separator', ','), kwargs.get('quote_character', '"'), fields)], indent=2)
+          data = json.dumps([value for value in field_values_from_separated_file(fh, kwargs.get('separator', ','), kwargs.get('quote_character', '"'), fields)], indent=2)
           content_type = 'json'
         else:
           raise PopupException(_('Could not update index. Unknown type %s') % data_type)
@@ -266,20 +250,24 @@ class CollectionManagerController(object):
       table = db.get_table(database, table)
       hql = "SELECT %s FROM `%s.%s` %s" % (','.join(columns), database, table.name, db._get_browse_limit_clause(table))
       query = dbms.hql_query(hql)
-      handle = db.execute_and_wait(query)
 
-      if handle:
-        result = db.fetch(handle, rows=100)
-        db.close(handle)
+      try:
+        handle = db.execute_and_wait(query)
 
-        dataset = tablib.Dataset()
-        dataset.append(columns)
-        for row in result.rows():
-          dataset.append(row)
+        if handle:
+          result = db.fetch(handle, rows=100)
+          db.close(handle)
 
-        if not api.update(collection_or_core_name, dataset.csv, content_type='csv'):
-          raise PopupException(_('Could not update index. Check error logs for more info.'))
-      else:
-        raise PopupException(_('Could not update index. Could not fetch any data from Hive.'))
+          dataset = tablib.Dataset()
+          dataset.append(columns)
+          for row in result.rows():
+            dataset.append(row)
+
+          if not api.update(collection_or_core_name, dataset.csv, content_type='csv'):
+            raise PopupException(_('Could not update index. Check error logs for more info.'))
+        else:
+          raise PopupException(_('Could not update index. Could not fetch any data from Hive.'))
+      except Exception, e:
+        raise PopupException(_('Could not update index.'), detail=e)
     else:
       raise PopupException(_('Could not update index. Indexing strategy %s not supported.') % indexing_strategy)

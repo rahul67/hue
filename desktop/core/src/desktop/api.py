@@ -21,8 +21,6 @@ import time
 
 from collections import defaultdict
 
-from django.core.urlresolvers import reverse
-
 from django.utils import html
 from django.utils.translation import ugettext as _
 
@@ -39,9 +37,7 @@ def _get_docs(user):
   history_tag = DocumentTag.objects.get_history_tag(user)
 
   query = Document.objects.get_docs(user) \
-      .exclude(tags__in=[history_tag]). \
-      select_related('owner', 'content_type') \
-      .prefetch_related('tags','documentpermission_set')
+      .exclude(tags__in=[history_tag])
 
   # Work around Oracle not supporting SELECT DISTINCT with the CLOB type.
   if desktop.conf.DATABASE.ENGINE.get() == 'django.db.backends.oracle':
@@ -53,9 +49,13 @@ def _get_docs(user):
 
   if desktop.conf.DATABASE.ENGINE.get() == 'django.db.backends.oracle':
     ids = [doc.id for doc in docs]
-    return Document.objects.filter(id__in=ids).defer(None)
-  else:
-    return docs
+    docs = Document.objects.filter(id__in=ids).defer(None)
+
+  docs = docs \
+      .select_related('owner', 'content_type') \
+      .prefetch_related('tags', 'documentpermission_set')
+
+  return docs
 
 
 def massaged_tags_for_json(docs, user):
@@ -173,6 +173,7 @@ def massaged_documents_for_json(documents, user):
     try:
       url = document.content_object.get_absolute_url()
     except:
+      LOG.exception('failed to get absolute url')
       # If app of document is disabled
       url = ''
     docs[document.id] = massage_doc_for_json(document, user, url)

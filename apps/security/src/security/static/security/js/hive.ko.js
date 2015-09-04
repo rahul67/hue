@@ -51,6 +51,12 @@ var Privilege = function (vm, privilege) {
       self.status('modified');
     }
   });
+  self.columnName = ko.observable(typeof privilege.columnName != "undefined" && privilege.columnName != null ? privilege.columnName : "");
+  self.columnName.subscribe(function () {
+    if (self.status() == '') {
+      self.status('modified');
+    }
+  });
   self.URI = ko.observable(typeof privilege.URI != "undefined" && privilege.URI != null ? privilege.URI : "");
   self.URI.subscribe(function () {
     if (self.status() == '') {
@@ -72,36 +78,69 @@ var Privilege = function (vm, privilege) {
   });
 
   // UI
-  self.privilegeType = ko.observable(typeof privilege.URI != "undefined" && privilege.URI != null && privilege.URI != "" ? "uri" : "db");
+  self.privilegeType = ko.observable(typeof privilege.privilegeScope != "undefined" && privilege.privilegeScope == 'URI' ? "uri" : "db");
   self.showAdvanced = ko.observable(false);
   self.path = ko.computed({
     read: function () {
-      if (self.tableName().length > 0) {
+      if (self.columnName().length > 0) {
+        return self.dbName() + "." + self.tableName() + "." + self.columnName();
+      } else if (self.tableName().length > 0) {
         return self.dbName() + "." + self.tableName();
       } else {
         return self.dbName();
       }
     },
     write: function (value) {
-      var lastSpacePos = value.lastIndexOf(".");
-      if (lastSpacePos > 0) {
-        this.dbName(value.substring(0, lastSpacePos));
-        this.tableName(value.substring(lastSpacePos + 1));
-      } else {
-        this.dbName(value);
-        this.tableName('');
-      }
+      var _parts = value.split(".");
+      this.dbName(_parts[0]);
+      this.tableName(_parts.length > 1 ? _parts[1] : "");
+      this.columnName(_parts.length > 2 ? _parts[2] : "");
     },
     owner: self
   });
-  self.privilegeScope = ko.computed(function () {
-    if (self.tableName().length > 0) {
+
+  self.metastorePath = ko.computed(function(){
+    if (self.columnName().length > 0) {
+      return '/metastore/table/' + self.dbName() + "/" + self.tableName() + "#col=" + self.columnName();
+    } else if (self.tableName().length > 0) {
+      return '/metastore/table/' + self.dbName() + "/" + self.tableName();
+    } else if (self.dbName().length > 0) {
+      return '/metastore/tables/' + self.dbName();
+    } else {
+      return '';
+    }
+  });
+
+  function getPrivilegeScope() {
+    if (self.privilegeType() == 'uri') {
+      return 'URI';
+    } else if (self.columnName().length > 0) {
+      return 'COLUMN';
+    } else if (self.tableName().length > 0) {
       return 'TABLE';
     } else if (self.dbName().length > 0) {
       return 'DATABASE';
     } else {
       return 'SERVER';
     }
+  }
+
+  self.privilegeScope = ko.observable(typeof privilege.privilegeScope != "undefined" ? privilege.privilegeScope : getPrivilegeScope());
+
+  self.privilegeType.subscribe(function(newVal){
+    self.privilegeScope(getPrivilegeScope());
+  });
+
+  self.columnName.subscribe(function(newVal){
+    self.privilegeScope(getPrivilegeScope());
+  });
+
+  self.tableName.subscribe(function(newVal){
+    self.privilegeScope(getPrivilegeScope());
+  });
+
+  self.dbName.subscribe(function(newVal){
+    self.privilegeScope(getPrivilegeScope());
   });
 
   self.remove = function (privilege) {
@@ -202,7 +241,7 @@ var Role = function (vm, role) {
 
   self.addPrivilege = function () {
     if (vm.getSectionHash() == 'edit') {
-      self.privileges.push(new Privilege(vm, {'serverName': vm.assist.server(), 'status': 'new', 'editing': true, 'dbName': vm.assist.db(), 'tableName': vm.assist.table()}));
+      self.privileges.push(new Privilege(vm, {'serverName': vm.assist.server(), 'status': 'new', 'editing': true, 'dbName': vm.assist.db(), 'tableName': vm.assist.table(), 'columnName': vm.assist.column()}));
     } else {
       self.privileges.push(new Privilege(vm, {'serverName': vm.assist.server(), 'status': 'new', 'editing': true}));
     }
@@ -333,6 +372,21 @@ var Assist = function (vm, initial) {
     var table = self.path().split(/[.]/)[1];
     return table ? table : null;
   });
+  self.column = ko.computed(function () {
+    var column = self.path().split(/[.]/)[2];
+    return column ? column : null;
+  });
+  self.metastorePath = ko.computed(function(){
+    if (self.column()) {
+      return '/metastore/table/' + self.db() + "/" + self.table() + "#col=" + self.column();
+    } else if (self.table()) {
+      return '/metastore/table/' + self.db() + "/" + self.table();
+    } else if (self.db()) {
+      return '/metastore/tables/' + self.db();
+    } else {
+      return '/metastore/databases';
+    }
+  });
   self.privileges = ko.observableArray();
   self.roles = ko.observableArray();
   self.isDiffMode = ko.observable(false);
@@ -443,7 +497,7 @@ var Assist = function (vm, initial) {
   }
 
   self.addColumns = function (path, columns, skipLoading) {
-    var _branch = self.growingTree();
+    var _branch = self.growingTree().nodes[0];
     _branch.nodes.forEach(function (node) {
       if (node.path == path.split(".")[0]) {
 
@@ -593,7 +647,7 @@ var Assist = function (vm, initial) {
     e.stopPropagation();
     e.stopImmediatePropagation();
     self.fetchHivePath(obj.path(), function(data){
-      location.href = "/security/hdfs#" + data.hdfs_link.substring("/filebrowser/view".length);
+      location.href = "/security/hdfs#" + data.hdfs_link.substring("/filebrowser/view=".length);
     });
   }
 
@@ -689,11 +743,11 @@ var Assist = function (vm, initial) {
   }
 
   self.fetchHivePath = function (optionalPath, loadCallback) {
-    self.isLoadingTree(true);
-
     var _originalPath = typeof optionalPath != "undefined" ? optionalPath : self.path();
 
-    if (_originalPath.split(".").length < 3) {
+    if (_originalPath.split(".").length < 4) {
+      self.isLoadingTree(true);
+
       var _path = _originalPath.replace('.', '/');
       var request = {
         url: '/security/api/hive/fetch_hive_path',
@@ -719,10 +773,11 @@ var Assist = function (vm, initial) {
           else if (data.tables && data.tables.length > 0) {
             self.addTables(_originalPath, data.tables, _hasCallback);
           }
+          else if (data.columns && data.columns.length > 0) {
+            self.addColumns(_originalPath, data.columns, _hasCallback);
+          }
+
           self.isLoadingTree(false);
-          //else if (data.columns && data.columns.length > 0) {
-            //self.addColumns(_originalPath, data.columns, _hasCallback);
-          //}
 
           if (_hasCallback) {
             loadCallback(data);
@@ -754,7 +809,7 @@ var HiveViewModel = function (initial) {
   self.isLoadingPrivileges = ko.observable(true);
   self.isApplyingBulk = ko.observable(false);
 
-  self.availablePrivileges = ko.observableArray(['SERVER', 'DATABASE', 'TABLE']);
+  self.availablePrivileges = ko.observableArray(['SERVER', 'DATABASE', 'TABLE', 'COLUMN']);
   self.availableActions = ko.observableArray(['SELECT', 'INSERT', 'ALL']);
 
   self.privilegeFilter = ko.observable("");
@@ -989,6 +1044,7 @@ var HiveViewModel = function (initial) {
       'serverName': privilege.server,
       'dbName': privilege.database,
       'tableName': privilege.table,
+      'columnName': privilege.column,
       'URI': privilege.URI,
       'action': privilege.action,
       'timestamp': privilege.timestamp,
@@ -1005,13 +1061,15 @@ var HiveViewModel = function (initial) {
       return {
         'server': self.assist.server(),
         'db': paths[0] ? paths[0] : null,
-        'table': paths[1] ? paths[1] : null
+        'table': paths[1] ? paths[1] : null,
+        'column': paths[2] ? paths[2] : null
       }
     } else {
       return {
         'server': self.assist.server(),
         'db': self.assist.db(),
-        'table': self.assist.table()
+        'table': self.assist.table(),
+        'column': self.assist.column(),
       }
     }
   }
@@ -1239,6 +1297,14 @@ var HiveViewModel = function (initial) {
       }
     }
     return "edit";
+  }
+
+  self.linkToBrowse = function (path) {
+    self.assist.path(path);
+    $(document).trigger("changed.path");
+    self.assist.loadParents();
+    self.updateSectionHash("edit");
+    $(document).trigger("show.mainSection");
   }
 };
 

@@ -1,40 +1,40 @@
+/*
+ * Licensed to Cloudera, Inc. under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  Cloudera, Inc. licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.cloudera.hue.livy.repl
 
-import com.cloudera.hue.livy.repl.scala.SparkSession
-import org.json4s.JsonAST.JValue
-import org.json4s.{DefaultFormats, Extraction}
-import org.scalatest.matchers.ShouldMatchers
-import org.scalatest.{BeforeAndAfter, FunSpec}
+import com.cloudera.hue.livy.repl.scala.SparkInterpreter
+import org.json4s.Extraction
+import org.json4s.JsonAST.{JArray, JValue}
 
 import _root_.scala.concurrent.Await
 import _root_.scala.concurrent.duration.Duration
 
-class SparkSessionSpec extends FunSpec with ShouldMatchers with BeforeAndAfter {
+class SparkSessionSpec extends BaseSessionSpec {
 
-  implicit val formats = DefaultFormats
-
-  var session: Session = null
-
-  before {
-    session = SparkSession.create()
-  }
-
-  after {
-    session.close()
-  }
+  override def createInterpreter() = SparkInterpreter()
 
   describe("A spark session") {
-    it("should start in the starting or idle state") {
-      session.state should (equal (Session.Starting()) or equal (Session.Idle()))
-    }
-
-    it("should eventually become the idle state") {
-      session.waitForStateChange(Session.Starting())
-      session.state should equal (Session.Idle())
-    }
-
     it("should execute `1 + 2` == 3") {
-      val result = Await.result(session.execute("1 + 2"), Duration.Inf)
+      val statement = session.execute("1 + 2")
+      statement.id should equal (0)
+
+      val result = Await.result(statement.result, Duration.Inf)
       val expectedResult = Extraction.decompose(Map(
         "status" -> "ok",
         "execution_count" -> 0,
@@ -47,7 +47,10 @@ class SparkSessionSpec extends FunSpec with ShouldMatchers with BeforeAndAfter {
     }
 
     it("should execute `x = 1`, then `y = 2`, then `x + y`") {
-      var result = Await.result(session.execute("val x = 1"), Duration.Inf)
+      var statement = session.execute("val x = 1")
+      statement.id should equal (0)
+
+      var result = Await.result(statement.result, Duration.Inf)
       var expectedResult = Extraction.decompose(Map(
         "status" -> "ok",
         "execution_count" -> 0,
@@ -58,7 +61,10 @@ class SparkSessionSpec extends FunSpec with ShouldMatchers with BeforeAndAfter {
 
       result should equal (expectedResult)
 
-      result = Await.result(session.execute("val y = 2"), Duration.Inf)
+      statement = session.execute("val y = 2")
+      statement.id should equal (1)
+
+      result = Await.result(statement.result, Duration.Inf)
       expectedResult = Extraction.decompose(Map(
         "status" -> "ok",
         "execution_count" -> 1,
@@ -69,7 +75,10 @@ class SparkSessionSpec extends FunSpec with ShouldMatchers with BeforeAndAfter {
 
       result should equal (expectedResult)
 
-      result = Await.result(session.execute("x + y"), Duration.Inf)
+      statement = session.execute("x + y")
+      statement.id should equal (2)
+
+      result = Await.result(statement.result, Duration.Inf)
       expectedResult = Extraction.decompose(Map(
         "status" -> "ok",
         "execution_count" -> 2,
@@ -82,7 +91,10 @@ class SparkSessionSpec extends FunSpec with ShouldMatchers with BeforeAndAfter {
     }
 
     it("should capture stdout") {
-      val result = Await.result(session.execute("""println("Hello World")"""), Duration.Inf)
+      val statement = session.execute("""println("Hello World")""")
+      statement.id should equal (0)
+
+      val result = Await.result(statement.result, Duration.Inf)
       val expectedResult = Extraction.decompose(Map(
         "status" -> "ok",
         "execution_count" -> 0,
@@ -95,7 +107,10 @@ class SparkSessionSpec extends FunSpec with ShouldMatchers with BeforeAndAfter {
     }
 
     it("should report an error if accessing an unknown variable") {
-      val result = Await.result(session.execute("""x"""), Duration.Inf)
+      val statement = session.execute("""x""")
+      statement.id should equal (0)
+
+      val result = Await.result(statement.result, Duration.Inf)
       val expectedResult = Extraction.decompose(Map(
         "status" -> "error",
         "execution_count" -> 0,
@@ -103,14 +118,18 @@ class SparkSessionSpec extends FunSpec with ShouldMatchers with BeforeAndAfter {
         "evalue" ->
           """<console>:8: error: not found: value x
             |              x
-            |              ^""".stripMargin
+            |              ^""".stripMargin,
+        "traceback" -> List()
       ))
 
       result should equal (expectedResult)
     }
 
     it("should report an error if exception is thrown") {
-      val result = Await.result(session.execute("""throw new Exception()"""), Duration.Inf)
+      val statement = session.execute("""throw new Exception()""")
+      statement.id should equal (0)
+
+      val result = Await.result(statement.result, Duration.Inf)
       val resultMap = result.extract[Map[String, JValue]]
 
       // Manually extract the values since the line numbers in the exception could change.
@@ -118,11 +137,14 @@ class SparkSessionSpec extends FunSpec with ShouldMatchers with BeforeAndAfter {
       resultMap("execution_count").extract[Int] should equal (0)
       resultMap("ename").extract[String] should equal ("Error")
       resultMap("evalue").extract[String] should include ("java.lang.Exception")
-      resultMap.get("traceback") should equal (None)
+      resultMap("traceback").extract[List[_]] should equal (List())
     }
 
     it("should access the spark context") {
-      val result = Await.result(session.execute("""sc"""), Duration.Inf)
+      val statement = session.execute("""sc""")
+      statement.id should equal (0)
+
+      val result = Await.result(statement.result, Duration.Inf)
       val resultMap = result.extract[Map[String, JValue]]
 
       // Manually extract the values since the line numbers in the exception could change.
@@ -134,16 +156,40 @@ class SparkSessionSpec extends FunSpec with ShouldMatchers with BeforeAndAfter {
     }
 
     it("should execute spark commands") {
-      val result = Await.result(session.execute(
-        """
-          |sc.parallelize(0 to 1).map{i => i+1}.collect
-          |""".stripMargin), Duration.Inf)
+      val statement = session.execute(
+        """sc.parallelize(0 to 1).map{i => i+1}.collect""".stripMargin)
+      statement.id should equal (0)
+
+      val result = Await.result(statement.result, Duration.Inf)
 
       val expectedResult = Extraction.decompose(Map(
         "status" -> "ok",
         "execution_count" -> 0,
         "data" -> Map(
           "text/plain" -> "res0: Array[Int] = Array(1, 2)"
+        )
+      ))
+
+      result should equal (expectedResult)
+    }
+
+    it("should do table magic") {
+      val statement = session.execute("val x = List((1, \"a\"), (3, \"b\"))\n%table x")
+      statement.id should equal (0)
+
+      val result = Await.result(statement.result, Duration.Inf)
+
+
+      val expectedResult = Extraction.decompose(Map(
+        "status" -> "ok",
+        "execution_count" -> 0,
+        "data" -> Map(
+          "application/vnd.livy.table.v1+json" -> Map(
+            "headers" -> List(
+              Map("type" -> "BIGINT_TYPE", "name" -> "_1"),
+              Map("type" -> "STRING_TYPE", "name" -> "_2")),
+            "data" -> List(List(1, "a"), List(3, "b"))
+          )
         )
       ))
 

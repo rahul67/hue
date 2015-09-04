@@ -23,10 +23,11 @@ from datetime import datetime
 
 from django.utils.formats import localize_input
 from django.utils.translation import ugettext as _
-from jobsub.parameterization import find_variables
+from desktop.lib.parameterization import find_variables
 
 
 LOG = logging.getLogger(__name__)
+
 
 JSON_FIELDS = ('parameters', 'job_properties', 'files', 'archives', 'prepares', 'params',
                'deletes', 'mkdirs', 'moves', 'chmods', 'touchzs')
@@ -118,6 +119,9 @@ def smart_path(path, mapping, is_coordinator=False):
 
   return path
 
+def contains_symlink(path, mapping):
+  vars = find_variables(path)
+  return any([var in mapping and '#' in mapping[var] for var in vars]) or '#' in path
 
 def utc_datetime_format(utc_time):
   return utc_time.strftime(UTC_TIME_FORMAT)

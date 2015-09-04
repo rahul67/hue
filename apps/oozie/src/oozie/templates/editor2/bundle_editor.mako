@@ -14,7 +14,7 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
-from desktop.views import commonheader, commonfooter, commonshare
+from desktop.views import commonheader, commonfooter, commonshare, _ko
 from django.utils.translation import ugettext as _
 %>
 
@@ -56,7 +56,7 @@ ${ commonheader(_("Bundle Editor"), "Oozie", user) | n,unicode }
     </a>
 
     <a class="share-link btn" rel="tooltip" data-placement="bottom" data-bind="click: openShareModal,
-        attr: {'data-original-title': '${ _("Share") } ' + name},
+        attr: {'data-original-title': '${ _ko("Share") } ' + name},
         css: {'isShared': isShared(), 'btn': true},
         visible: bundle.id() != null && canEdit()">
       <i class="fa fa-users"></i>
@@ -89,7 +89,7 @@ ${ layout.menubar(section='bundles', is_editor=True, pullright=buttons) }
       <div class="card card-home" style="padding-bottom: 10px">
         <h1 class="card-heading simple" style="border-bottom: none"><span data-bind="editable: $root.bundle.name, editableOptions: {enabled: $root.isEditing(), placement: 'right'}"></span></h1>
         <div class="card-body muted" style="margin-top: 2px" data-bind="visible: $root.isEditing() || (! $root.isEditing() && $root.bundle.properties.description)">
-          <span data-bind="editable: $root.bundle.properties.description, editableOptions: {enabled: $root.isEditing(), placement: 'right', emptytext: '${_('Add a description...')}'}"></span>
+          <span data-bind="editable: $root.bundle.properties.description, editableOptions: {enabled: $root.isEditing(), placement: 'right', emptytext: '${_ko('Add a description...')}'}"></span>
         </div>
       </div>
 
@@ -143,7 +143,7 @@ ${ layout.menubar(section='bundles', is_editor=True, pullright=buttons) }
 </div>
 
 
-<div id="chooseCoordinatorDemiModal" class="demi-modal hide" data-backdrop="false">
+<div id="chooseCoordinatorDemiModal" class="demi-modal fade" data-backdrop="false">
   <div class="modal-body">
     <a href="javascript: void(0)" data-dismiss="modal" class="pull-right"><i class="fa fa-times"></i></a>
     <div style="float: left; margin-right: 10px;text-align: center">
@@ -165,6 +165,7 @@ ${ layout.menubar(section='bundles', is_editor=True, pullright=buttons) }
       </div>
     </div>
   </div>
+  <div><a class="pointer demi-modal-chevron" data-dismiss="modal"><i class="fa fa-chevron-up"></i></a></div>
 </div>
 
 
@@ -223,6 +224,8 @@ ${ dashboard.import_bindings() }
 <script src="${ static('oozie/js/bundle-editor.ko.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('oozie/js/editor2-utils.js') }" type="text/javascript" charset="utf-8"></script>
 
+<script src="${ static('desktop/ext/js/jquery/plugins/jquery.hotkeys.js') }"></script>
+
 
 <script type="text/javascript">
   var viewModel = new BundleEditorViewModel(${ bundle_json | n,unicode }, ${ coordinators_json | n,unicode }, ${ can_edit_json | n,unicode });
@@ -255,6 +258,11 @@ ${ dashboard.import_bindings() }
   $(document).ready(function() {
     $("#chooseCoordinatorDemiModal").modal({
       show: false
+    });
+    $(window).bind("keydown", "esc", function () {
+      if ($(".demi-modal.fade.in").length > 0) {
+        $(".demi-modal.fade.in .demi-modal-chevron").click();
+      }
     });
   });
 </script>

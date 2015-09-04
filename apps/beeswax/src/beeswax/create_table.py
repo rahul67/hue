@@ -40,10 +40,12 @@ from beeswax.forms import CreateTableForm, ColumnTypeFormSet,\
   PartitionTypeFormSet, CreateByImportFileForm, CreateByImportDelimForm,\
   TERMINATOR_CHOICES
 from beeswax.server import dbms
+from beeswax.server.dbms import QueryServerException
 from beeswax.views import execute_directly
 
 
 LOG = logging.getLogger(__name__)
+
 
 def create_table(request, database='default'):
   """Create a table by specifying its attributes manually"""
@@ -244,7 +246,10 @@ def import_wizard(request, database='default'):
 
         do_load_data = s1_file_form.cleaned_data.get('do_import')
         path = s1_file_form.cleaned_data['path']
-        return _submit_create_and_load(request, proposed_query, table_name, path, do_load_data, database=database)
+        try:
+          return _submit_create_and_load(request, proposed_query, table_name, path, do_load_data, database=database)
+        except QueryServerException, e:
+          raise PopupException(_('The table could not be created.'), detail=e.message)
   else:
     s1_file_form = CreateByImportFileForm()
 
@@ -386,6 +391,7 @@ def _readfields(lines, delimiters):
     try:
       fields_list = _get_rows(lines, delimiter)
     except:
+      LOG.exception('failed to get rows')
       fields_list = [line.split(delimiter) for line in lines if line]
 
     score = score_delim(fields_list)

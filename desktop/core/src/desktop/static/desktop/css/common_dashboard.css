@@ -48,7 +48,7 @@
   background-color: #FFF;
 }
 
-.card-column {
+.card-column, .card-additional {
   border: none;
 }
 
@@ -158,6 +158,27 @@
   color: #CCC;
 }
 
+@media (max-width: 1438px) {
+  .draggable-widget {
+    width: 50px;
+  }
+
+  .draggable-widget a {
+    font-size: 24px;
+  }
+}
+
+@media (max-width: 1300px) {
+  .draggable-widget {
+    width: 40px;
+  }
+
+  .draggable-widget a {
+    font-size: 20px;
+  }
+}
+
+
 .layout-container {
   width: 100px;
   float: left;
@@ -259,29 +280,6 @@ body.modal-open {
   top: 7px;
   left: -4px;
   color: #666;
-}
-
-.clearable {
-  background: url(/static/desktop/art/clearField.png) no-repeat right -10px center;
-  border: 1px solid #999;
-  padding: 3px 18px 3px 4px;
-  border-radius: 3px;
-  transition: background 0.4s !important;
-}
-
-@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
-  .clearable {
-    background: url(/static/desktop/art/clearField@2x.png) no-repeat right -10px center;
-    background-size: 10px 10px;
-  }
-}
-
-.clearable.x {
-  background-position: right 5px center;
-}
-
-.clearable.onX {
-  cursor: pointer !important;
 }
 
 .facet-field-cnt {
@@ -414,4 +412,10 @@ body.modal-open {
 .logs-icon {
   font-size: 20px;
   margin-right: 17px;
+}
+
+.card-additional {
+  padding: 10px;
+  margin-bottom: 10px;
+  text-align: center;
 }

@@ -14,7 +14,7 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
-  from desktop.views import commonheader, commonfooter, commonshare
+  from desktop.views import commonheader, commonfooter, commonshare, _ko
   from django.utils.translation import ugettext as _
 %>
 
@@ -209,7 +209,7 @@ ${ commonheader(_('Welcome Home'), "home", user) | n,unicode }
 
 
 
-  <div id="documentMoveModal" class="modal fade">
+  <div id="documentMoveModal" class="modal fade hide">
     <div class="modal-header">
         <a href="#" class="close" data-dismiss="modal">&times;</a>
         <h3>${_('Move to a project')}</h3>
@@ -265,7 +265,7 @@ ${ commonheader(_('Welcome Home'), "home", user) | n,unicode }
     <td data-bind="html: description"></td>
     <td data-bind="text: lastModified"></td>
     <td style="text-align: center; white-space: nowrap">
-      <a href="javascript:void(0)" rel="tooltip" data-placement="left" data-bind="click: moveDoc, attr: {'data-original-title': '${ _("Change project for") } '+name}" style="padding-left:8px; padding-right: 8px">
+      <a href="javascript:void(0)" rel="tooltip" data-placement="left" data-bind="click: moveDoc, attr: {'data-original-title': '${ _ko("Change project for") } '+name}" style="padding-left:8px; padding-right: 8px">
         <span data-bind="foreach: tags">
           <!-- ko if: name != 'trash'-->
           <span class="badge" data-bind="html: name"></span>
@@ -274,7 +274,7 @@ ${ commonheader(_('Welcome Home'), "home", user) | n,unicode }
       </a>
     </td>
     <td style="width: 40px; text-align: center">
-      <a class="share-link" rel="tooltip" data-placement="left" style="padding-left:10px; padding-right: 10px" data-bind="click: shareDoc, attr: {'data-original-title': '${ _("Share") } '+name}, visible: isMine , css: {'baseShared': true, 'isShared': perms.read.users.length + perms.read.groups.length + perms.write.users.length + perms.write.groups.length > 0}">
+      <a class="share-link" rel="tooltip" data-placement="left" style="padding-left:10px; padding-right: 10px" data-bind="click: shareDoc, attr: {'data-original-title': '${ _ko("Share") } '+name}, visible: isMine , css: {'baseShared': true, 'isShared': perms.read.users.length + perms.read.groups.length + perms.write.users.length + perms.write.groups.length > 0}">
         <i class="fa fa-users"></i>
       </a>
       <i class="fa fa-ban" style="padding-left:8px; padding-right: 8px" data-bind="visible: !isMine"></i>
@@ -318,8 +318,8 @@ ${ commonheader(_('Welcome Home'), "home", user) | n,unicode }
 
 ${ commonshare() | n,unicode }
 <script src="${ static('desktop/ext/js/datatables-paging-0.1.js') }" type="text/javascript" charset="utf-8"></script>
-<script src="${ static('desktop/ext/js/knockout-min.js') }" type="text/javascript" charset="utf-8"></script>
-<script src="${ static('desktop/ext/js/knockout.mapping-2.3.2.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/ext/js/knockout.min.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/ext/js/knockout-mapping.min.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/js/home.vm.js') }"></script>
 <script src="${ static('desktop/js/share.vm.js') }"></script>
 

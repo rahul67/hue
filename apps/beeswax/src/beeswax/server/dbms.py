@@ -23,16 +23,16 @@ from django.core.urlresolvers import reverse
 from django.utils.encoding import force_unicode
 from django.utils.translation import ugettext as _
 
+from desktop.lib.django_util import format_preserving_redirect
+from desktop.lib.i18n import smart_str
+from desktop.lib.parameterization import substitute_variables
+from filebrowser.views import location_to_url
+
 from beeswax import hive_site
-from beeswax.conf import HIVE_SERVER_HOST, HIVE_SERVER_PORT, BROWSE_PARTITIONED_TABLE_LIMIT
+from beeswax.conf import HIVE_SERVER_HOST, HIVE_SERVER_PORT, BROWSE_PARTITIONED_TABLE_LIMIT, SERVER_CONN_TIMEOUT
 from beeswax.design import hql_query
 from beeswax.hive_site import hiveserver2_use_ssl
 from beeswax.models import QueryHistory, QUERY_TYPES
-
-from filebrowser.views import location_to_url
-from desktop.lib.django_util import format_preserving_redirect
-from desktop.lib.i18n import smart_str
-
 
 
 LOG = logging.getLogger(__name__)
@@ -107,6 +107,13 @@ class QueryServerException(Exception):
     self.message = message
 
 
+class QueryServerTimeoutException(Exception):
+
+  def __init__(self, message=''):
+    super(QueryServerTimeoutException, self).__init__(message)
+    self.message = message
+
+
 class NoSuchObjectException: pass
 
 
@@ -117,25 +124,68 @@ class HiveServer2Dbms(object):
     self.server_type = server_type
     self.server_name = self.client.query_server['server_name']
 
+
+  @classmethod
+  def to_matching_wildcard(cls, identifier=None):
+    cleaned = "*"
+    if identifier and identifier.strip() != "*":
+      cleaned = "*%s*" % identifier.strip().strip("*")
+    return cleaned
+
+
+  def get_databases(self, database_names='*'):
+    identifier = self.to_matching_wildcard(database_names)
+
+    hql = "SHOW DATABASES LIKE '%s'" % (identifier) # self.client.get_databases() is too slow
+    query = hql_query(hql)
+    timeout = SERVER_CONN_TIMEOUT.get()
+
+    handle = self.execute_and_wait(query, timeout_sec=timeout)
+
+    if handle:
+      result = self.fetch(handle, rows=5000)
+      self.close(handle)
+      return [name for database in result.rows() for name in database]
+    else:
+      return []
+
+
+  def get_database(self, database):
+    return self.client.get_database(database)
+
+
+  def get_tables_meta(self, database='default', table_names='*'):
+    identifier = self.to_matching_wildcard(table_names)
+    return self.client.get_tables_meta(database, identifier)
+
+
+  def get_tables(self, database='default', table_names='*'):
+    identifier = self.to_matching_wildcard(table_names)
+
+    hql = "SHOW TABLES IN `%s` '%s'" % (database, identifier) # self.client.get_tables(database, table_names) is too slow
+    query = hql_query(hql)
+    timeout = SERVER_CONN_TIMEOUT.get()
+
+    handle = self.execute_and_wait(query, timeout_sec=timeout)
+
+    if handle:
+      result = self.fetch(handle, rows=5000)
+      self.close(handle)
+      return [name for table in result.rows() for name in table]
+    else:
+      return []
+
+
   def get_table(self, database, table_name):
     return self.client.get_table(database, table_name)
 
 
-  def get_tables(self, database='default', table_names='*'):
-      hql = "SHOW TABLES IN %s '%s'" % (database, table_names) # self.client.get_tables(database, table_names) is too slow
-      query = hql_query(hql)
-      handle = self.execute_and_wait(query, timeout_sec=15.0)
-
-      if handle:
-        result = self.fetch(handle, rows=5000)
-        self.close(handle)
-        return [name for table in result.rows() for name in table]
-      else:
-        return []
-
-
-  def get_databases(self):
-    return self.client.get_databases()
+  def get_column(self, database, table_name, column_name):
+    table = self.client.get_table(database, table_name)
+    for col in table.cols:
+      if col.name == column_name:
+        return col
+    return None
 
 
   def execute_query(self, query, design):
@@ -143,7 +193,7 @@ class HiveServer2Dbms(object):
 
 
   def select_star_from(self, database, table):
-    hql = "SELECT * FROM `%s.%s` %s" % (database, table.name, self._get_browse_limit_clause(table))
+    hql = "SELECT * FROM `%s`.`%s` %s" % (database, table.name, self._get_browse_limit_clause(table))
     return self.execute_statement(hql)
 
 
@@ -185,7 +235,11 @@ class HiveServer2Dbms(object):
     """No samples if it's a view (HUE-526)"""
     if not table.is_view:
       limit = min(100, BROWSE_PARTITIONED_TABLE_LIMIT.get())
-      hql = "SELECT * FROM %s.%s LIMIT %s" % (database, table.name, limit)
+      partition_query = ""
+      if table.partition_keys:
+        partitions = self.get_partitions(database, table, partition_spec=None, max_parts=1)
+        partition_query = 'WHERE ' + ' AND '.join(["%s='%s'" % (table.partition_keys[idx].name, key) for idx, key in enumerate(partitions[0].values)])
+      hql = "SELECT * FROM `%s`.`%s` %s LIMIT %s" % (database, table.name, partition_query, limit)
       query = hql_query(hql)
       handle = self.execute_and_wait(query, timeout_sec=5.0)
 
@@ -195,22 +249,111 @@ class HiveServer2Dbms(object):
         return result
 
 
-  def analyze_table_table(self, database, table):
-    hql = 'analyze table `%(database)s.%(table_name)` compute statistics' % {'database': database, 'table_name': table.name}
-    query = hql_query(hql, database)
+  def analyze_table(self, database, table):
+    if self.server_name == 'impala':
+      hql = 'COMPUTE STATS `%(database)s`.`%(table)s`' % {'database': database, 'table': table}
+    else:
+      hql = 'ANALYZE TABLE `%(database)s`.`%(table)s` COMPUTE STATISTICS' % {'database': database, 'table': table}
 
-    return self.execute_query(query)
+    return self.execute_statement(hql)
 
 
-  def analyze_table_column(self):
-    # analyze table <table_name> partition <part_name> compute statistics for columns <col_name1>, <col_name2>...
-    pass
+  def analyze_table_columns(self, database, table):
+    if self.server_name == 'impala':
+      hql = 'COMPUTE STATS `%(database)s`.`%(table)s`' % {'database': database, 'table': table}
+    else:
+      hql = 'ANALYZE TABLE `%(database)s`.`%(table)s` COMPUTE STATISTICS FOR COLUMNS' % {'database': database, 'table': table}
+
+    return self.execute_statement(hql)
+
+
+  def get_table_stats(self, database, table):
+    stats = []
+
+    if self.server_name == 'impala':
+      hql = 'SHOW TABLE STATS `%(database)s`.`%(table)s`' % {'database': database, 'table': table}
+
+      query = hql_query(hql)
+      handle = self.execute_and_wait(query, timeout_sec=5.0)
+
+      if handle:
+        result = self.fetch(handle, rows=100)
+        self.close(handle)
+        stats = list(result.rows())
+    else:
+      table = self.get_table(database, table)
+      stats = table.stats
+
+    return stats
+
+
+  def get_table_columns_stats(self, database, table, column):
+    if self.server_name == 'impala':
+      hql = 'SHOW COLUMN STATS `%(database)s`.`%(table)s`' % {'database': database, 'table': table}
+    else:
+      hql = 'DESCRIBE FORMATTED `%(database)s`.`%(table)s` %(column)s' % {'database': database, 'table': table, 'column': column}
+
+    query = hql_query(hql)
+    handle = self.execute_and_wait(query, timeout_sec=5.0)
+
+    if handle:
+      result = self.fetch(handle, rows=100)
+      self.close(handle)
+      data = list(result.rows())
+
+      if self.server_name == 'impala':
+        data = [col for col in data if col[0] == column][0]
+        return [
+            {'col_name': data[0]},
+            {'data_type': data[1]},
+            {'distinct_count': data[2]},
+            {'num_nulls': data[3]},
+            {'max_col_len': data[4]},
+            {'avg_col_len': data[5]},
+        ]
+      else:
+        return [
+            {'col_name': data[2][0]},
+            {'data_type': data[2][1]},
+            {'min': data[2][2]},
+            {'max': data[2][3]},
+            {'num_nulls': data[2][4]},
+            {'distinct_count': data[2][5]},
+            {'avg_col_len': data[2][6]},
+            {'max_col_len': data[2][7]},
+            {'num_trues': data[2][8]},
+            {'num_falses': data[2][9]}
+        ]
+    else:
+      return []
+
+
+  def get_top_terms(self, database, table, column, limit=30, prefix=None):
+    limit = min(limit, 100)
+    prefix_match = ''
+    if prefix:
+      prefix_match = "WHERE CAST(%(column)s AS STRING) LIKE '%(prefix)s%%'" % {'column': column, 'prefix': prefix}
+
+    hql = 'SELECT %(column)s, COUNT(*) AS ct FROM `%(database)s`.`%(table)s` %(prefix_match)s GROUP BY %(column)s ORDER BY ct DESC LIMIT %(limit)s' % {
+        'database': database, 'table': table, 'column': column, 'prefix_match': prefix_match, 'limit': limit,
+    }
+
+    query = hql_query(hql)
+    handle = self.execute_and_wait(query, timeout_sec=60.0) # Hive is very slow
+
+    if handle:
+      result = self.fetch(handle, rows=limit)
+      self.close(handle)
+      return list(result.rows())
+    else:
+      return []
+
 
   def drop_table(self, database, table):
     if table.is_view:
-      hql = "DROP VIEW `%s.%s`" % (database, table.name,)
+      hql = "DROP VIEW `%s`.`%s`" % (database, table.name,)
     else:
-      hql = "DROP TABLE `%s.%s`" % (database, table.name,)
+      hql = "DROP TABLE `%s`.`%s`" % (database, table.name,)
 
     return self.execute_statement(hql)
 
@@ -221,7 +364,7 @@ class HiveServer2Dbms(object):
     if form.cleaned_data['overwrite']:
       hql += " OVERWRITE"
     hql += " INTO TABLE "
-    hql += "`%s.%s`" % (database, table.name,)
+    hql += "`%s`.`%s`" % (database, table.name,)
     if form.partition_columns:
       hql += " PARTITION ("
       vals = []
@@ -242,9 +385,9 @@ class HiveServer2Dbms(object):
 
     for table in tables:
       if table.is_view:
-        hql.append("DROP VIEW `%s.%s`" % (database, table.name,))
+        hql.append("DROP VIEW `%s`.`%s`" % (database, table.name,))
       else:
-        hql.append("DROP TABLE `%s.%s`" % (database, table.name,))
+        hql.append("DROP TABLE `%s`.`%s`" % (database, table.name,))
     query = hql_query(';'.join(hql), database)
     design.data = query.dumps()
     design.save()
@@ -257,9 +400,9 @@ class HiveServer2Dbms(object):
 
     for table in tables:
       try:
-        hql = "INVALIDATE METADATA %s.%s" % (database, table,)
+        hql = "INVALIDATE METADATA `%s`.`%s`" % (database, table,)
         query = hql_query(hql, database, query_type=QUERY_TYPES[1])
-  
+
         handle = self.execute_and_wait(query, timeout_sec=10.0)
       except Exception, e:
         LOG.warn('Refresh tables cache out of sync: %s' % smart_str(e))
@@ -307,9 +450,11 @@ class HiveServer2Dbms(object):
     if result_meta.in_tablename:
       self.use(database)
       query = self._get_and_validate_select_query(design, query_history)
-      hql = 'CREATE TABLE %s.%s AS %s' % (target_database, target_table, query)
+      hql = 'CREATE TABLE `%s`.`%s` AS %s' % (target_database, target_table, query)
       query_history = self.execute_statement(hql)
     else:
+      # FYI: this path is dead since moving to HiveServer2
+      #
       # Case 2: The results are in some temporary location
       # Beeswax backward compatibility and optimization
       # 1. Create table
@@ -361,7 +506,7 @@ class HiveServer2Dbms(object):
 
 
   def use(self, database):
-    query = hql_query('USE %s' % database)
+    query = hql_query('USE `%s`' % database)
     return self.client.use(query)
 
 
@@ -394,11 +539,18 @@ class HiveServer2Dbms(object):
       time.sleep(sleep_interval)
       curr = time.time()
 
+    # Query timed out, so attempt to cancel operation and raise exception
+    msg = "The query timed out after %(timeout)d seconds, canceled query." % {'timeout': timeout_sec}
+    LOG.warning(msg)
     try:
       self.cancel_operation(handle)
-    except:
+    except Exception, e:
+      msg = "Failed to cancel query."
+      LOG.warning(msg)
       self.close_operation(handle)
-    return None
+      raise QueryServerException(e, message=msg)
+
+    raise QueryServerTimeoutException(message=msg)
 
 
   def execute_next_statement(self, query_history, hql_query):
@@ -412,6 +564,11 @@ class HiveServer2Dbms(object):
     query_history.last_state = QueryHistory.STATE.submitted.index
     query_history.save()
     query = query_history.design.get_design()
+
+    # In case of multiquery, we need to re-replace the parameters as we save the non substituted query
+    if query._data_dict['query']['is_parameterized']:
+      real_query = substitute_variables(query._data_dict['query']['query'], query_history.get_extra('parameters'))
+      query._data_dict['query']['query'] = real_query
 
     return self.execute_and_watch(query, query_history=query_history)
 
@@ -476,26 +633,30 @@ class HiveServer2Dbms(object):
     return self.client.close(handle)
 
 
-  def get_partitions(self, db_name, table, max_parts=None):
+  def get_partitions(self, db_name, table, partition_spec=None, max_parts=None, reverse_sort=True):
     if max_parts is None or max_parts > BROWSE_PARTITIONED_TABLE_LIMIT.get():
       max_parts = BROWSE_PARTITIONED_TABLE_LIMIT.get()
 
-    # DB name not supported in SHOW PARTITIONS
-    self.use(db_name)
+    return self.client.get_partitions(db_name, table.name, partition_spec, max_parts, reverse_sort)
 
-    return self.client.get_partitions(db_name, table.name, max_parts)
 
-  def get_partition(self, db_name, table_name, partition_id):
+  def get_partition(self, db_name, table_name, partition_spec):
     table = self.get_table(db_name, table_name)
-    partitions = self.get_partitions(db_name, table, max_parts=None)
+    partitions = self.get_partitions(db_name, table, partition_spec=partition_spec, max_parts=None)
 
-    partition_query = ""
-    for idx, key in enumerate(partitions[partition_id].values):
-      partition_query += (idx > 0 and " AND " or "") + table.partition_keys[idx].name + "='%s'" % key
+    if len(partitions) != 1:
+      raise NoSuchObjectException(_("Query did not return exactly one partition result"))
 
-    hql = "SELECT * FROM `%s.%s` WHERE %s" % (db_name, table_name, partition_query)
+    partition = partitions[0]
+    partition_query = " AND ".join(partition.partition_spec.split(','))
+
+    hql = "SELECT * FROM `%s`.`%s` WHERE %s" % (db_name, table_name, partition_query)
 
     return self.execute_statement(hql)
+
+
+  def describe_partition(self, db_name, table_name, partition_spec):
+    return self.client.get_table(db_name, table_name, partition_spec=partition_spec)
 
 
   def explain(self, query):

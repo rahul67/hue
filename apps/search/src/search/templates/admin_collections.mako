@@ -15,7 +15,7 @@
 ## limitations under the License.
 
 <%!
-  from desktop.views import commonheader, commonfooter
+  from desktop.views import commonheader, commonfooter, commonshare, commonimportexport, _ko
   from django.utils.translation import ugettext as _
 %>
 
@@ -25,6 +25,9 @@
 ${ commonheader(_('Search'), "search", user, "29px") | n,unicode }
 
 <link rel="stylesheet" href="${ static('search/css/admin.css') }">
+
+
+<div id="editor">
 
 <div class="search-bar" style="height: 30px">
   <div class="pull-right">
@@ -41,22 +44,45 @@ ${ commonheader(_('Search'), "search", user, "29px") | n,unicode }
   <div class="card card-home card-small">
     <%actionbar:render>
       <%def name="search()">
-        <input type="text" placeholder="${_('Filter dashboards...')}" class="input-xlarge search-query" id="filterInput" data-bind="visible: collections().length > 0 && !isLoading()">
+        <input type="text" placeholder="${_('Filter dashboards...')}" class="input-xlarge search-query" id="filterInput" data-bind="visible: collections().length > 0 && ! isLoading()">
       </%def>
 
       <%def name="actions()">
-        <a data-bind="visible: collections().length > 0 && !isLoading(), click: $root.copyCollections, clickBubble: false, css: {'btn': true, 'disabled': ! atLeastOneSelected()}"><i class="fa fa-files-o"></i> ${_('Copy')}</a>
-        <a data-bind="visible: collections().length > 0 && !isLoading(), click: $root.markManyForDeletion, clickBubble: false, css: {'btn': true, 'disabled': ! atLeastOneSelected()}"><i class="fa fa-times"></i> ${_('Delete')}</a>
+        <a data-bind="visible: collections().length > 0 && !isLoading(), click: $root.copyCollections, clickBubble: false, css: {'btn': true, 'disabled': selectedCollections().length == 0}">
+          <i class="fa fa-files-o"></i> ${_('Copy')}
+        </a>
+
+        <a data-bind="visible: collections().length > 0 && !isLoading(), click: $root.markManyForDeletion, clickBubble: false, css: {'btn': true, 'disabled': ! atLeastOneSelected()}">
+          <i class="fa fa-times"></i> ${_('Delete')}
+        </a>
+
+        <a class="share-link btn" rel="tooltip" data-placement="bottom" style="margin-left:20px" data-bind="click: function(e){ $root.oneSelected() ? prepareShareModal(e) : void(0) },
+          attr: {'data-original-title': '${ _ko("Share") } ' + name},
+          css: {'disabled': ! $root.oneSelected(), 'btn': true}">
+          <i class="fa fa-users"></i> ${ _('Share') }
+        </a>
+
+        <a data-bind="click: function() { atLeastOneSelected() ? exportDocuments() : void(0) }, css: {'btn': true, 'disabled': ! atLeastOneSelected() }">
+          <i class="fa fa-download"></i> ${ _('Export') }
+        </a>
       </%def>
 
       <%def name="creation()">
-        <a data-bind="visible: collections().length > 0 && !isLoading()" class="btn" href="${ url('search:new_search') }" title="${ _('Create a new dashboard') }"><i class="fa fa-plus-circle"></i> ${ _('Create') }</a>
+        <a data-bind="visible: collections().length > 0 && !isLoading()" class="btn" href="${ url('search:new_search') }" title="${ _('Create a new dashboard') }">
+          <i class="fa fa-plus-circle"></i> ${ _('Create') }
+        </a>
+        <a data-bind="click: function() { $('#import-documents').modal('show'); }" class="btn">
+          <i class="fa fa-upload"></i> ${ _('Import') }
+        </a>
       </%def>
     </%actionbar:render>
 
     <div class="row-fluid" data-bind="visible: collections().length == 0 && !isLoading()">
       <div class="span10 offset1 center importBtn pointer">
-        <a href="${ url('search:new_search') }"><i class="fa fa-plus-circle waiting"></i></a>
+        <a href="${ url('search:new_search') }">
+          <i class="fa fa-plus-circle waiting"></i>
+        </a>
+
         <h1 class="emptyMessage">
           ${ _('There are currently no dashboards defined.') }<br/>
           <a href="${ url('search:new_search') }">${ _('Click here to add') }</a> ${ _('one or more.') }</h1>
@@ -76,12 +102,11 @@ ${ commonheader(_('Search'), "search", user, "29px") | n,unicode }
           <thead>
             <tr>
               <th style="width: 1%">
-                <span data-bind="click: toggleSelectAll, css: {'fa-check': !ko.utils.arrayFilter(filteredCollections(), function(collection) {return !collection.selected()}).length}" class="hueCheckbox fa"></span>
+                <span data-bind="click: toggleSelectAll, css: {'fa-check': ! ko.utils.arrayFilter(filteredCollections(), function(collection) {return !collection.selected()}).length}" class="hueCheckbox fa"></span>
               </th>
               <th>${ _('Name') }</th>
-              <th>${ _('Solr Index') }</th>
+              <th>${ _('Description') }</th>
               <th width="15%">${ _('Owner') }</th>
-              <th width="1%" class="center">${ _('Shared') }</th>
             </tr>
           </thead>
           <tbody data-bind="foreach: filteredCollections">
@@ -89,10 +114,9 @@ ${ commonheader(_('Search'), "search", user, "29px") | n,unicode }
               <td data-bind="click: $root.toggleCollectionSelect.bind($root), clickBubble: false">
                 <span data-bind="css: {'fa-check': $root.filteredCollections()[$index()].selected()}" class="hueCheckbox fa"></span>
               </td>
-              <td><a data-bind="text: label, click: $root.editCollection" title="${ _('Click to edit') }" class="pointer"></a></td>
-              <td><a data-bind="text: name, click: $root.editIndex" title="${ _('Click to edit the index') }" class="pointer"></a></td>
+              <td><a data-bind="text: name, click: $root.editCollection" title="${ _('Click to edit') }" class="pointer"></a></td>
+              <td><span data-bind="text: description"></span></td>
               <td><span data-bind="text: owner"></span></td>
-              <td class="center"><span data-bind="css: { 'fa fa-check': enabled }"></span></td>
             </tr>
           </tbody>
         </table>
@@ -124,9 +148,19 @@ ${ commonheader(_('Search'), "search", user, "29px") | n,unicode }
   </div>
 </div>
 
-<script src="${ static('desktop/ext/js/knockout-min.js') }" type="text/javascript" charset="utf-8"></script>
-<script src="${ static('desktop/ext/js/knockout.mapping-2.3.2.js') }" type="text/javascript" charset="utf-8"></script>
+
+</div>
+
+
+${ commonshare() | n,unicode }
+${ commonimportexport(request) | n,unicode }
+
+
+<script src="${ static('desktop/ext/js/knockout.min.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/ext/js/knockout-mapping.min.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('search/js/collections.ko.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/js/share.vm.js') }"></script>
+
 
 <script>
   var appProperties = {
@@ -138,8 +172,10 @@ ${ commonheader(_('Search'), "search", user, "29px") | n,unicode }
   }
 
   var viewModel = new SearchCollectionsModel(appProperties);
+  ko.applyBindings(viewModel, $("#editor")[0]);
 
-  ko.applyBindings(viewModel);
+  shareViewModel = initSharing("#documentShareModal");
+  shareViewModel.setDocId(-1);
 
   $(document).ready(function () {
     viewModel.updateCollections();
@@ -184,6 +220,16 @@ ${ commonheader(_('Search'), "search", user, "29px") | n,unicode }
     $(document).on("confirmDelete", function () {
       $("#deleteModal").modal('show');
     });
+
+    self.exportDocuments = function() {
+      $('#export-documents').find('input[name=\'documents\']').val(ko.mapping.toJSON($.map(viewModel.selectedCollections(), function(doc) { return doc.id(); })));
+      $('#export-documents').find('form').submit();
+    };
+
+    prepareShareModal = function() {
+      shareViewModel.setDocId(viewModel.selectedCollections()[0].doc1_id());
+      openShareModal();
+    };
   });
 </script>
 

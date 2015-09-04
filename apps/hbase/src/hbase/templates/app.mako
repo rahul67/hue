@@ -45,7 +45,7 @@ ${ commonheader(None, "hbase", user) | n,unicode }
   <table data-datasource="${datasource}" class="table table-striped table-condensed datatables tablescroller-disable" style="padding-left: 0;padding-right: 0">
       <thead>
         <tr>
-          <th width="1%"><div data-bind="click: ${datasource}.toggleSelectAll, css: {hueCheckbox: true, 'fa': true, 'fa-check':${datasource}.selected().length == ${datasource}.items().length && ${datasource}.items().length>0}"></div></th>
+          <th width="1%"><div data-bind="click: ${datasource}.toggleSelectAll, css: {hueCheckbox: true, 'fa': true, 'fa-check': ${datasource}.allVisibleSelected() }"></div></th>
           <!-- ko foreach: ${datasource}.columns() -->
             <th data-bind="text:$data"></th> <!-- need to i18n first -->
           <!-- /ko -->
@@ -71,20 +71,18 @@ ${ commonheader(None, "hbase", user) | n,unicode }
       <h5 data-bind="click: lockClickOrigin($data.select, $element)"><code class="row_key" data-bind="text: $data.row.slice(0, 100) + ($data.row.length > 100 ? '...' : '')"></code> <i class="fa fa-check-square" data-bind="visible:$data.isSelected()"></i> <img data-bind="visible: $data.isLoading()" src="${ static('desktop/art/spinner.gif') }" />
         <span class="smartview-row-controls controls-hover-bottom">
           <button class="btn" data-bind="click: $data.reload, clickBubble: false" data-toggle="tooltip" title="${_('Refresh Row')}"><i class="fa fa-refresh"></i></button>
-          % if user.is_superuser:
+          % if can_write:
             <button class="btn" data-bind="click: $data.drop, clickBubble: false" data-toggle="tooltip" title="${_('Delete Row')}"><i class="fa fa-trash-o"></i></button>
           % endif
         </span>
         <span class="smartview-row-controls pull-right">
-          <button class="btn" data-bind="click: $data.toggleSelectedCollapse, enable: $data.selected().length > 0, clickBubble: false" data-toggle="tooltip" title="${_('Toggle Collapse Selected')}"><i data-bind="css: { 'fa': true, 'fa-compress': !$data.isCollapsed(), 'fa-expand': $data.isCollapsed() }"></i></button>
+          <button class="btn" data-bind="click: $data.toggleSelectedCollapse, css: {'disabled' : $data.selected().length === 0 && !$data.isCollapsed() }, clickBubble: false" data-toggle="tooltip" title="${_('Toggle Collapse Selected')}"><i data-bind="css: { 'fa': true, 'fa-compress': !$data.isCollapsed(), 'fa-expand': $data.isCollapsed() }"></i></button>
           <button class="btn" data-bind="click: $data.toggleSelectAllVisible, enable: $data.displayedItems().length > 0, clickBubble: false" data-toggle="tooltip" title="${_('Select All Visible')}"><i class="fa fa-check-square-o"></i></button>
           <input type="text" placeholder="${('Filter Column Names/Family')}" data-bind="value: $data.searchQuery, valueUpdate: $data.items().length < 100 ? 'afterkeydown' : 'change', clickBubble: false"/>
           ${sortBtn('$data.sortDropDown')}
-          % if user.is_superuser:
-            <button class="btn" data-bind="enable: $data.selected().length > 0, click: $data.dropSelected, clickBubble: false"><i class="fa fa-trash-o"></i> Drop Columns</button>
-          % endif
           % if can_write:
-          <a href="#new_column_modal" data-bind="click:function(){app.focusModel($data);launchModal('new_column_modal', $data);}" class="btn" title="${_('Add New Column/Cell')}"><i class="fa fa-plus"></i></a>
+            <button class="btn" data-bind="enable: $data.selected().length > 0, click: $data.dropSelected, clickBubble: false"><i class="fa fa-trash-o"></i> Drop Columns</button>
+            <a href="#new_column_modal" data-bind="click:function(){app.focusModel($data);launchModal('new_column_modal', $data);}" class="btn" title="${_('Add New Column/Cell')}"><i class="fa fa-plus"></i></a>
           % endif
         </span>
       </h5>
@@ -94,13 +92,15 @@ ${ commonheader(None, "hbase", user) | n,unicode }
           <div>
             <h6><span class="label" data-bind="text: $data.name.split(':')[0]+':', style: {'backgroundColor': stringHashColor($data.name.split(':')[0])}"></span> <span data-bind="text: $data.name.split(':')[1]"></span></h6>
             <span class="timestamp label"><i class='fa fa-clock-o'></i> <span data-bind="text: convertTimestamp($data.timestamp)"></span></span>
-            % if user.is_superuser:
+            % if can_write:
               <a class="corner-btn btn" data-bind="click: $data.drop, clickBubble: false"><i class="fa fa-trash-o"></i></a>
             % endif
-            <a class="corner-btn btn" data-bind="visible: $data.editing(), event: { mousedown: function(){launchModal('cell_edit_modal',{content:$data, mime: detectMimeType($data.value())})} }"><i class="fa fa-pencil"></i> ${_('Full Editor')}</a>
-            <pre data-bind="text: ($data.value().length > 146 ? $data.value().substring(0, 144)+'...' : $data.value()).replace(/(\r\n|\n|\r)/gm,''), click: editCell.bind(null, $data), clickBubble: false, visible: !$data.isLoading() && !$data.editing()"></pre>
-            <textarea data-bind="visible: !$data.isLoading() && $data.editing(), hasfocus: $data.editing, value: $data.value, click:function(){}, clickBubble: false"></textarea>
-            <img src="${ static('desktop/art/spinner.gif') }" data-bind="visible: $data.isLoading() " />
+            <a class="corner-btn btn" data-bind="event: { mousedown: function(){ showFullEditor($data) } }"><i class="fa fa-pencil"></i> ${_('Full Editor')}</a>
+            <div data-bind="visible: ! isLoading()" style="display: none;">
+              <pre data-bind="text: ($data.value().length > 146 ? $data.value().substring(0, 144) + '...' : $data.value()).replace(/(\r\n|\n|\r)/gm,''), click: editCell.bind(null, $data), clickBubble: false, visible: ! $data.isLoading() && ! $data.editing()"></pre>
+              <textarea data-bind="visible: editing, hasFocus: editing, disable: ! app.views.tabledata.canWrite(), value: value, click: function() {}, clickBubble: false"></textarea>
+            </div>
+            <img src="${ static('desktop/art/spinner.gif') }" data-bind="visible: $data.isLoading()" style="display: none;" />
           </div>
         </li>
         <!-- /ko -->
@@ -158,7 +158,7 @@ ${ commonheader(None, "hbase", user) | n,unicode }
     <div class="actionbar">
       <div style="padding-bottom: 20px">
         <input type="text" class="input-large search-query" placeholder="${_('Search for Table Name')}" data-bind="value: views.tables.searchQuery, valueUpdate: 'afterkeydown'">
-        % if user.is_superuser:
+        % if can_write:
           <span class="btn-group">
             <button class="btn" data-bind="enable: views.tables.canEnable, click: views.tables.enableSelected"><i class="fa fa-check-square"></i> ${_('Enable')}</button>
             <button class="btn" data-bind="enable: views.tables.canDisable, click: views.tables.disableSelected">
@@ -273,7 +273,7 @@ ${ commonheader(None, "hbase", user) | n,unicode }
             <span class="smartview-row-controls pull-right" data-bind="if: views.tabledata.items().length > 0 && views.tabledata.selected().length > 0">
               <button class="btn" data-bind="click: views.tabledata.batchSelectedAlias.bind(null, 'toggleSelectedCollapse'), clickBubble: false" data-toggle="tooltip" title="${_('Toggle Collapse Selected')}"><i class="fa fa-compress"></i></button>
               <button class="btn" data-bind="click: views.tabledata.batchSelectedAlias.bind(null, 'toggleSelectAllVisible'), clickBubble: false" data-toggle="tooltip" title="${_('Select All Visible')}"><i class="fa fa-check-square-o"></i></button>
-              % if user.is_superuser:
+              % if can_write:
                 <button class="btn" data-bind="enable: views.tabledata.items()[0].selected().length > 0, click: views.tabledata.items()[0].dropSelected, clickBubble: false"><i class="fa fa-trash-o"></i> ${_('Drop Columns')}</button>
               % endif
             </span>
@@ -302,7 +302,7 @@ ${ commonheader(None, "hbase", user) | n,unicode }
             </span>
           </div>
           <span class="pull-right">
-            % if user.is_superuser:
+            % if can_write:
               <a class="btn" data-bind="enable: views.tabledata.selected().length > 0, click: views.tabledata.dropSelected"><i class="fa fa-trash-o"></i> ${_('Drop Rows')}</a>
             % endif
             % if can_write:
@@ -367,25 +367,26 @@ ${ commonheader(None, "hbase", user) | n,unicode }
     <script id="cell_edit_modal_template" type="text/html">
       <div class="modal-header">
         <a class="close pointer" data-dismiss="modal" aria-hidden="true">&times;</a>
-        <h3>${_('Edit Cell')} - <span data-bind="text: content.name || formatTimestamp(content.timestamp)"></span> <code data-bind="text: mime"></code> <small><i class="fa fa-clock-o"></i> <span data-bind="text: formatTimestamp($data.content.timestamp)"></span></small></h3>
+        <h3>${_('Edit Cell')} - <span data-bind="text: content.name || formatTimestamp(timestamp())"></span> <code data-bind="text: mime, visible: mime !== 'type/null'"></code> <small><i class="fa fa-clock-o"></i> <span data-bind="text: formatTimestamp(timestamp())"></span></small></h3>
       </div>
       <div class="modal-body container-fluid">
           <div class="row-fluid">
             <div class="span9 controls">
-              <!-- ko if: !$data.readonly -->
+              <!-- ko if: ! $data.readonly -->
               <input type="hidden" data-bind="value: app.cluster"/>
               <input type="hidden" data-bind="value: app.views.tabledata.name"/>
               <input type="hidden" data-bind="value: $data.content.parent.row"/>
               <input type="hidden" data-bind="value: $data.content.name"/>
               <!-- /ko -->
-              <!-- ko template: {name: 'cell_'+mime.split('/')[0].toLowerCase()+'_template'} -->
+              <!-- ko template: {name: 'cell_' + mime().split('/')[0].toLowerCase() + '_template'} -->
               <!-- /ko -->
             </div>
             <div class="span3">
               <ul class="nav nav-list cell-history">
                 <li class="nav-header">${_('Cell History:')}</li>
+                <li data-bind="css: { 'active': showingCurrent }"><a data-bind="click: switchToCurrent()" class="pointer">${_('Current Version')}<span data-bind="if: (originalValue !== value() && showingCurrent()) || (originalValue !== currentValue() && !showingCurrent())"> (${_('Edited')})</span></a></li>
                 <!-- ko foreach: $data.content.history.items() -->
-                  <li data-bind="css: { 'active': $data.timestamp == $parent.content.timestamp }"><a data-bind="click: $parent.content.history.pickHistory.bind(null, $data), text: formatTimestamp($data.timestamp)" class="pointer"></a></li>
+                  <li data-bind="css: { 'active': $data.timestamp == $parent.timestamp() }"><a data-bind="click: function() { $root.switchToHistorical($data) }, text: formatTimestamp($data.timestamp)" class="pointer"></a></li>
                 <!-- /ko -->
                 <li data-bind="visible: $data.content.history.loading()"><img src="${ static('desktop/art/spinner.gif') }" /></li>
               </ul>
@@ -393,27 +394,35 @@ ${ commonheader(None, "hbase", user) | n,unicode }
           </div>
         </div>
       </div>
-      <div class="modal-footer" data-bind="if: !$data.readonly">
-        % if user.is_superuser:
+      <div class="modal-footer">
+        <!-- ko if: showingCurrent -->
           <button class="btn" data-dismiss="modal" aria-hidden="true">${_('Cancel')}</button>
           <a id="file-upload-btn" class="btn fileChooserBtn" aria-hidden="true"><i class="fa fa-upload"></i> ${_('Upload')}</a>
-          <input data-bind="visible: mime.split('/')[0].toLowerCase() != 'application' && mime.split('/')[0].toLowerCase() != 'image'" type="submit" class="btn btn-primary" value="${_('Save')}">
-        % else:
-          <button class="btn" data-dismiss="modal" aria-hidden="true">${_('OK')}</button>
-        % endif
+          <input data-bind="visible: mime().split('/')[0].toLowerCase() != 'application' && mime().split('/')[0].toLowerCase() != 'image'" type="submit" class="btn btn-primary" value="${_('Save')}">
+        <!-- /ko -->
+        <!-- ko ifnot: showingCurrent -->
+          <button class="btn" data-dismiss="modal" aria-hidden="true">${_('Cancel')}</button>
+          <input type="submit" class="btn btn-primary" value="${_('Revert')}">
+        <!-- /ko -->
       </div>
     </script>
+
     <script id="cell_image_template" type="text/html">
-      <img data-bind="attr:{src: 'data:image/' + $data.mime + ';base64,' + $data.content.value()}"/>
+      <img data-bind="attr: {src: 'data:image/' + $data.mime() + ';base64,' + value()}"/>
+      <input type="hidden" data-bind="value: value"/>
     </script>
+
     <script id="cell_text_template" type="text/html">
-      <textarea id="codemirror_target" data-bind="text: $data.content.value" data-use-post="true"></textarea>
+      <textarea id="codemirror_target" data-bind="text: value, disable: !showingCurrent()" data-use-post="true"></textarea>
     </script>
+
     <script id="cell_application_template" type="text/html">
-      <iframe width="100%" height="100%" data-bind="attr:{src: 'data:' + $data.mime + ';base64,' + $data.content.value()}"></iframe>
+      <iframe width="100%" height="100%" data-bind="attr: {src: 'data:' + $data.mime() + ';base64,' + value()}"></iframe>
+      <input type="hidden" data-bind="value: value"/>
     </script>
+
     <script id="cell_type_template" type="text/html">
-      <textarea style="width:100%; height: 450px;" data-bind="text: $data.content.value" data-use-post="true"></textarea>
+      <textarea style="width:100%; height: 450px;" data-bind="textInput: value, disable: !showingCurrent()" data-use-post="true"></textarea>
     </script>
   </div>
 
@@ -475,7 +484,7 @@ function i18n(text) {
 canWrite = ${ str(can_write).lower() };
 </script>
 <script src="${ static('desktop/ext/js/datatables-paging-0.1.js') }" type="text/javascript" charset="utf-8"></script>
-<script src="${ static('desktop/ext/js/knockout-min.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/ext/js/knockout.min.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/routie-0.3.0.min.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/mustache.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/codemirror-3.11.js') }"></script>

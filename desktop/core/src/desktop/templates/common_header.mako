@@ -41,13 +41,13 @@ from django.utils.translation import ugettext as _
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta charset="utf-8">
   <title>Hue ${get_nice_name(current_app, section)} ${get_title(title)}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/x-icon" href="${ static('desktop/art/favicon.ico') }" />
   <meta name="description" content="">
   <meta name="author" content="">
-  <meta http-equiv="X-UA-Compatible" content="IE=edge">
 
   <link href="${ static('desktop/ext/css/bootplus.css') }" rel="stylesheet">
   <link href="${ static('desktop/ext/css/font-awesome.min.css') }" rel="stylesheet">
@@ -145,7 +145,9 @@ from django.utils.translation import ugettext as _
 
   <!--[if lt IE 9]>
   <script type="text/javascript">
-    location.href = "${ url('desktop.views.unsupported') }";
+    if (document.documentMode && document.documentMode < 9){
+      location.href = "${ url('desktop.views.unsupported') }";
+    }
   </script>
   <![endif]-->
 
@@ -156,6 +158,11 @@ from django.utils.translation import ugettext as _
       if (_UA.indexOf("firefox/" + i + ".") > -1) {
         location.href = "${ url('desktop.views.unsupported') }";
       }
+    }
+
+    // check for IE document modes
+    if (document.documentMode && document.documentMode < 9){
+      location.href = "${ url('desktop.views.unsupported') }";
     }
   </script>
 
@@ -185,17 +192,13 @@ from django.utils.translation import ugettext as _
   <script type="text/javascript" charset="utf-8">
 
     //Add CSRF Token to all XHR Requests
-    var csrftoken = $.cookie('csrftoken');
-    function csrfSafeMethod(method) {
-      // these HTTP methods do not require CSRF protection
-      return (/^(GET|HEAD|OPTIONS|TRACE)$/.test(method));
-    }
-
     var xrhsend = XMLHttpRequest.prototype.send;
     XMLHttpRequest.prototype.send = function (data) {
-      this.setRequestHeader('X-CSRFToken', csrftoken);
+      this.setRequestHeader('X-CSRFToken', $.cookie('csrftoken'));
       return xrhsend.apply(this, arguments);
     }
+
+    $.fn.dataTableExt.sErrMode = "throw";
 
     $(document).ready(function () {
       // forces IE's ajax calls not to cache
@@ -241,21 +244,21 @@ from django.utils.translation import ugettext as _
 
       % if 'jobbrowser' in apps:
       var JB_CHECK_INTERVAL_IN_MILLIS = 30000;
-      window.setTimeout(checkJobBrowserStatus, 10);
+      var checkJobBrowserStatusIdx = window.setTimeout(checkJobBrowserStatus, 10);
 
       function checkJobBrowserStatus(){
         $.getJSON("/${apps['jobbrowser'].display_name}/?format=json&state=running&user=${user.username}", function(data){
-          if (data != null){
-            if (data.length > 0){
-              $("#jobBrowserCount").removeClass("hide").text(data.length);
+          if (data != null && data.jobs != null){
+            if (data.jobs.length > 0){
+              $("#jobBrowserCount").removeClass("hide").text(data.jobs.length);
             }
             else {
               $("#jobBrowserCount").addClass("hide");
             }
           }
-          window.setTimeout(checkJobBrowserStatus, JB_CHECK_INTERVAL_IN_MILLIS);
+          checkJobBrowserStatusIdx = window.setTimeout(checkJobBrowserStatus, JB_CHECK_INTERVAL_IN_MILLIS);
         }).fail(function () {
-          window.clearTimeout(checkJobBrowserStatus);
+          window.clearTimeout(checkJobBrowserStatusIdx);
         });
       }
       % endif
@@ -269,7 +272,7 @@ from django.utils.translation import ugettext as _
         window.clearTimeout(closeTimeout);
         openTimeout = window.setTimeout(function () {
           $(".navigator li.open").removeClass("open");
-          $(".navigator ul.dropdown-menu").hide();
+          $(".navigator .nav-pills li.dropdown > ul.dropdown-menu").hide();
           $("[rel='navigator-tooltip']").tooltip("hide");
           _this.find("ul.dropdown-menu:eq(0)").show();
         }, _timeout);
@@ -315,7 +318,8 @@ from django.utils.translation import ugettext as _
         var _lastShown = $(this).find(".dropdown-menu").data("lastShown");
         if (_lastShown == null || (new Date()).getTime() - _lastShown > 300) {
           var _el = $(this);
-          window.setTimeout(function () {
+          _el.hideTimeout = window.setTimeout(function () {
+            window.clearTimeout(_el.hideTimeout);
             _el.find(".dropdown-menu").hide();
           }, 50);
         }
@@ -370,7 +374,15 @@ from django.utils.translation import ugettext as _
     <li class="dropdown">
       <a title="${ _('Administration') }" rel="navigator-tooltip" href="index.html#" data-toggle="dropdown" class="dropdown-toggle"><i class="fa fa-cogs"></i>&nbsp;<span class="hideable">${user.username}&nbsp;</span><b class="caret"></b></a>
       <ul class="dropdown-menu">
-        <li><a href="${ url('useradmin.views.edit_user', username=user.username) }"><i class="fa fa-key"></i>&nbsp;&nbsp;${_('Edit Profile')}</a></li>
+        <li>
+          <a href="${ url('useradmin.views.edit_user', username=user.username) }"><i class="fa fa-key"></i>&nbsp;&nbsp;
+            % if is_ldap_setup:
+              ${_('View Profile')}
+            % else:
+              ${_('Edit Profile')}
+            % endif
+          </a>
+        </li>
         % if user.is_superuser:
           <li><a href="${ url('useradmin.views.list_users') }"><i class="fa fa-group"></i>&nbsp;&nbsp;${_('Manage Users')}</a></li>
         % endif
@@ -397,7 +409,7 @@ from django.utils.translation import ugettext as _
          query_apps = count_apps(apps, ['beeswax', 'impala', 'rdbms', 'pig', 'jobsub', 'spark']);
        %>
        % if query_apps[1] > 1:
-       <li class="dropdown">
+       <li class="dropdown oozie">
          <a title="${_('Query data')}" rel="navigator-tooltip" href="#" data-toggle="dropdown" class="dropdown-toggle">Query Editors <b class="caret"></b></a>
          <ul role="menu" class="dropdown-menu">
            % if 'beeswax' in apps:
@@ -416,7 +428,13 @@ from django.utils.translation import ugettext as _
              <li><a href="/${apps['jobsub'].display_name}"><img src="${ static(apps['jobsub'].icon_path) }" class="app-icon"/> ${_('Job Designer')}</a></li>
            % endif
            % if 'spark' in apps:
-             <li><a href="/${apps['spark'].display_name}"><img src="${ static(apps['spark'].icon_path) }" class="app-icon"/> ${_('Spark')}</a></li>
+             <li class="dropdown-submenu">
+               <a href="/${apps['spark'].display_name}"><img src="${ static(apps['spark'].icon_path) }" class="app-icon"/> ${_('Spark (beta)')}</a>
+               <ul class="dropdown-menu">
+                 <li><a href="${ url('spark:new') }"><i class="fa fa-fw fa-plus" style="vertical-align: middle"></i>${_('Notebook')}</a></li>
+                 <li><a href="${ url('spark:notebooks') }"><i class="fa fa-fw fa-tags" style="vertical-align: middle"></i>${_('Notebooks')}</a></li>
+               </ul>
+             </li>
            % endif
          </ul>
        </li>
@@ -448,7 +466,7 @@ from django.utils.translation import ugettext as _
          <li><a href="/${apps[data_apps[0]].display_name}">${apps[data_apps[0]].nice_name}</a></li>
        % endif
        % if 'oozie' in apps:
-       <li class="dropdown">
+       <li class="dropdown oozie">
          <a title="${_('Schedule with Oozie')}" rel="navigator-tooltip" href="#" data-toggle="dropdown" class="dropdown-toggle">Workflows <b class="caret"></b></a>
          <ul role="menu" class="dropdown-menu">
            <li class="dropdown-submenu">
@@ -484,25 +502,33 @@ from django.utils.translation import ugettext as _
        % endif
        % if 'search' in apps:
          <% from search.search_controller import SearchController %>
-         <% collections = SearchController(user).get_shared_search_collections() %>
+         <% controller = SearchController(user) %>
+         <% collections = controller.get_shared_search_collections() %>
          % if not collections:
            <li>
              <a title="${_('Solr Search')}" rel="navigator-tooltip" href="${ url('search:index') }">Search</a>
            </li>
          % else:
            <li class="dropdown">
-             <a title="${_('Solr Search')}" rel="navigator-tooltip" href="#" data-toggle="dropdown" class="dropdown-toggle">${_('Search')} <b class="caret"></b></a>
+             <a title="${_('Solr Search')}" rel="navigator-tooltip" href="#" data-toggle="dropdown" class="dropdown-toggle">
+               ${_('Search')} <b class="caret"></b>
+             </a>
              <ul role="menu" class="dropdown-menu">
                % for collection in collections:
-                 <li><a href="${ url('search:index') }?collection=${ collection.id }"><img src="${ static(collection.icon) }" class="app-icon"/> ${ collection.label }</a></li>
+                 <li>
+                   <a href="${ url('search:index') }?collection=${ collection.id }">
+                     <img src="${ static(controller.get_icon(collection.name)) }" class="app-icon"/> ${ collection.name }
+                   </a>
+                 </li>
                % endfor
                % if 'indexer' in apps or 'search' in apps:
                  <li class="divider"></li>
                  % if 'search' in apps:
-                 <li><a href="${ url('search:new_search') }"><i class="fa fa-plus"></i> ${ _('Dashboard') }</a></li>
+                 <li><a href="${ url('search:new_search') }" style="height: 24px; line-height: 24px!important;"><i class="fa fa-plus" style="vertical-align: middle"></i> ${ _('Dashboard') }</a></li>
+                 <li><a href="${ url('search:admin_collections') }" style="height: 24px; line-height: 24px!important;"><i class="fa fa-tags" style="vertical-align: middle"></i>${ _('Dashboards') }</a></li>
                  % endif
                  % if 'indexer' in apps:
-                 <li><a href="${ url('indexer:collections') }"><i class="fa fa-database"></i> ${ _('Indexes') }</a></li>
+                 <li><a href="${ url('indexer:collections') }" style="height: 24px; line-height: 24px!important;"><i class="fa fa-database" style="vertical-align: middle"></i> ${ _('Indexes') }</a></li>
                  % endif
                % endif
              </ul>

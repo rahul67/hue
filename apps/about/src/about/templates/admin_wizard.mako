@@ -134,7 +134,7 @@ ${ header.menubar() }
           % endif
           % if 'jobsub' in app_names:
               <li>
-                <a href="javascript:void(0)" data-loading-text="${ _('Installing...') }"
+                <a href="javascript:void(0)" class="installBtn" data-loading-text="${ _('Installing...') }"
                    data-sample-url="${ url('oozie:install_examples') }">
                   <i class="fa fa-download"></i> ${ apps['jobsub'].nice_name }
                 </a>
@@ -238,7 +238,7 @@ ${ header.menubar() }
           <span class="muted">${ _('Hue and the Hue logo are trademarks of Cloudera, Inc.') }</span>
           % if not user.is_authenticated():
             <br/>
-            <a href="${ reverse('desktop.auth.views.dt_login') }" class="btn btn-primary" style="margin-top: 50px;margin-bottom: 20px"><i class="fa fa-sign-in"></i> ${ _('Sign in now!') }</a>
+            <a href="${ reverse('desktop.views.home') }" class="btn btn-primary" style="margin-top: 50px;margin-bottom: 20px"><i class="fa fa-sign-in"></i> ${ _('Sign in now!') }</a>
           % endif
         </p>
        </div>

@@ -69,6 +69,8 @@ var PigScript = function (pigScript) {
   self.getParameters = function () {
     var params = {};
     var variables = this.script().match(/([^\\]|^)\$[^\d'"](\w*)/g);
+    var declares = this.script().match(/%declare +([^ ])+/gi);
+    var defaults = this.script().match(/%default +([^;])+/gi);
     var macro_defines = this.script().match(/define [^ ]+ *\(([^\)]*)\)/gi); // no multiline
     var macro_returns = this.script().match(/returns +([^\{]*)/gi); // no multiline
 
@@ -76,6 +78,23 @@ var PigScript = function (pigScript) {
       $.each(variables, function(index, param) {
         var p = param.substring(param.indexOf('$') + 1);
         params[p] = '';
+      });
+    }
+    if (declares) {
+      $.each(declares, function(index, param) {
+        param = param.match(/(\w+)/g);
+        if (param && param.length >= 2) {
+          delete params[param[1]];
+        }
+      });
+    }
+    if (defaults) {
+      $.each(defaults, function(index, param) {
+        var line = param.match(/(\w+)/g);
+        if (line && line.length >= 2) {
+          var name = line[1];
+          params[name] = param.substring(param.indexOf(name) + name.length + 1);
+        }
       });
     }
     if (macro_defines) {

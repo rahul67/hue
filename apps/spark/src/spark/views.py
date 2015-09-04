@@ -17,7 +17,6 @@
 
 import json
 import logging
-import uuid
 
 from django.core.urlresolvers import reverse
 from django.utils.translation import ugettext as _
@@ -26,10 +25,10 @@ from desktop.lib.django_util import render, JsonResponse
 from desktop.lib.json_utils import JSONEncoderForHTML
 from desktop.models import Document2, Document
 
-from spark.conf import LANGUAGES
+from spark.conf import LANGUAGES, LIVY_SERVER_SESSION_KIND
 from spark.decorators import check_document_access_permission,\
   check_document_modify_permission
-from spark.models import Notebook, get_api
+from spark.models import Notebook, get_api, SparkApi
 from spark.management.commands.spark_setup import Command
 
 
@@ -37,7 +36,7 @@ LOG = logging.getLogger(__name__)
 
 
 @check_document_access_permission()
-def editor(request):
+def notebook(request):
   notebook_id = request.GET.get('notebook')
 
   if notebook_id:
@@ -49,12 +48,49 @@ def editor(request):
   try:
     autocomplete_base_url = reverse('beeswax:api_autocomplete_databases', kwargs={})
   except:
-    pass
+    LOG.exception('failed to get autocomplete base url')
 
-  return render('editor.mako', request, {
+  return render('notebook.mako', request, {
       'notebooks_json': json.dumps([notebook.get_data()]),
       'options_json': json.dumps({
           'languages': LANGUAGES.get(),
+          'snippet_placeholders' : {
+              'spark': _('Example: 1 + 1, or press CTRL + space'),
+              'pyspark': _('Example: 1 + 1, or press CTRL + space'),
+              'impala': _('Example: SELECT * FROM tablename, or press CTRL + space'),
+              'hive': _('Example: SELECT * FROM tablename, or press CTRL + space'),
+              'r': _('Example: 1 + 1, or press CTRL + space')
+          },
+          'session_properties': SparkApi.PROPERTIES
+      }),
+      'autocomplete_base_url': autocomplete_base_url,
+      'is_yarn_mode': LIVY_SERVER_SESSION_KIND.get()
+  })
+
+
+@check_document_access_permission()
+def editor(request):
+  editor_id = request.GET.get('editor')
+
+  if editor_id:
+    editor = Notebook(document=Document2.objects.get(id=editor_id))
+  else:
+    editor = Notebook()
+    data = editor.get_data()
+    data['name'] = 'Hive SQL Editor'
+    data['snippets'] = json.loads('[{"id":"c111cbb4-f475-4050-c5a1-02df6c31e3d8","name":"","type":"hive","editorMode":"text/x-hiveql","statement_raw":"Example: SELECT * FROM tablename, or press CTRL + space","codemirrorSize":100,"status":"ready","properties":{"settings":[],"files":[]},"variables":[],"variableNames":[],"statement":"Example: SELECT * FROM tablename, or press CTRL + space","result":{"id":"149347d9-3ae7-8d06-4cc8-d4bce5e72dc8","type":"table","hasResultset":true,"handle":{},"meta":[],"cleanedMeta":[],"fetchedOnce":false,"startTime":"2015-07-17T20:38:21.970Z","endTime":"2015-07-17T20:38:21.970Z","executionTime":0,"cleanedNumericMeta":[],"cleanedStringMeta":[],"cleanedDateTimeMeta":[],"data":[],"logs":"","logLines":0,"errors":"","hasSomeResults":false},"showGrid":true,"showChart":false,"showLogs":false,"progress":0,"size":12,"offset":0,"isLoading":false,"klass":"snippet card card-widget","editorKlass":"editor span12","resultsKlass":"results hive","errorsKlass":"results hive alert alert-error","chartType":"bars","chartSorting":"none","chartYMulti":[],"chartData":[],"tempChartOptions":{},"isLeftPanelVisible":false,"codeVisible":true,"settingsVisible":false,"checkStatusTimeout":null}]')
+    editor.data = json.dumps(data)
+
+  autocomplete_base_url = ''
+  try:
+    autocomplete_base_url = reverse('beeswax:api_autocomplete_databases', kwargs={})
+  except:
+    LOG.exception('failed to get autocomplete base url')
+
+  return render('editor.mako', request, {
+      'notebooks_json': json.dumps([editor.get_data()]),
+      'options_json': json.dumps({
+          'languages': [{"name": "Hive SQL", "type": "hive"}],
           'snippet_placeholders' : {
               'scala': _('Example: 1 + 1, or press CTRL + space'),
               'python': _('Example: 1 + 1, or press CTRL + space'),
@@ -68,7 +104,7 @@ def editor(request):
 
 
 def new(request):
-  return editor(request)
+  return notebook(request)
 
 
 def notebooks(request):
@@ -100,17 +136,12 @@ def copy(request):
 
   for notebook in notebooks:
     doc2 = Document2.objects.get(uuid=notebook['uuid'])
-    copy_doc = doc2.doc.get().copy(owner=request.user)
+    doc = doc2.doc.get()
 
-    doc2.pk = None
-    doc2.id = None
-    doc2.uuid = str(uuid.uuid4())
-    doc2.owner = request.user
-    doc2.save()
+    name = doc2.name + '-copy'
+    doc2 = doc2.copy(name=name, owner=request.user)
 
-    doc2.doc.all().delete()
-    doc2.doc.add(copy_doc)
-    doc2.save()
+    doc.copy(content_object=doc2, name=name, owner=request.user)
 
   return JsonResponse({})
 

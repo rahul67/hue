@@ -37,16 +37,95 @@ ko.bindingHandlers.fadeVisible = {
   }
 };
 
+ko.bindingHandlers.logScroller = {
+  init: function (element, valueAccessor) {
+    var $element = $(element);
 
-ko.extenders.numeric = function (target, precision) {
+    $element.on("scroll", function () {
+      $element.data('lastScrollTop', $element.scrollTop());
+    });
+
+    function autoLogScroll () {
+      var elementHeight = $element.innerHeight();
+      var lastScrollTop = $element.data('lastScrollTop') || 0;
+      var lastScrollHeight = $element.data('lastScrollHeight') || elementHeight;
+
+      var stickToBottom = (lastScrollTop + elementHeight) === lastScrollHeight;
+
+      if (stickToBottom) {
+        $element.scrollTop(element.scrollHeight - $element.height());
+        $element.data('lastScrollTop', $element.scrollTop());
+      }
+
+      $element.data('lastScrollHeight', element.scrollHeight);
+    }
+
+    var logValue = valueAccessor();
+    logValue.subscribe(function () {
+      window.setTimeout(autoLogScroll, 200);
+    });
+
+    autoLogScroll();
+  }
+};
+
+ko.bindingHandlers.multiCheck = {
+  init: function (element, valueAccessor) {
+    $(element).attr('unselectable', 'on').css('user-select', 'none').on('selectstart', false);
+
+    var $container = $(ko.unwrap(valueAccessor()));
+    $(element).click(function (e, shouldIgnore) {
+      var $self = $(this);
+      if ($self.data('noMultiCheck')) {
+        $self.data('noMultiCheck', false);
+        return;
+      }
+      var shouldCheck = $self.is(':checked') || ! $self.hasClass('fa-check');
+      if (e.shiftKey && shouldCheck === $container.data('last-clicked-checkbox-state')) {
+        var insideGroup = false;
+        var allCheckboxes = $container.find(":checkbox");
+        if (allCheckboxes.length == 0) {
+          allCheckboxes = $container.find(".hueCheckbox");
+        }
+        for (var i = 0; i < allCheckboxes.length; i++) {
+          var checkbox = allCheckboxes[i];
+          if (checkbox === this || checkbox === $container.data('last-clicked-checkbox')) {
+            if (insideGroup) {
+              break;
+            }
+            insideGroup = true;
+            continue;
+          }
+          if (insideGroup) {
+            var $checkbox = $(checkbox);
+            $checkbox.data('noMultiCheck', true);
+            if (($checkbox.is(':checked') || $checkbox.hasClass('fa-check')) !== shouldCheck) {
+              $checkbox.trigger("click");
+            }
+          }
+        }
+      }
+      $container.data('last-clicked-checkbox', this);
+      $container.data('last-clicked-checkbox-state', shouldCheck);
+    });
+  },
+  update: function() {}
+};
+
+ko.extenders.numeric = function (target, config) {
+  var precision = typeof config.precision === 'undefined' ? config : config.precision;
+  var roundingMultiplier = Math.pow(10, precision);
+
   var result = ko.computed({
     read: target,
     write: function (newValue) {
       var current = target(),
-          roundingMultiplier = Math.pow(10, precision),
           newValueAsNum = isNaN(newValue) ? 0 : parseFloat(+newValue),
           valueToWrite = Math.round(newValueAsNum * roundingMultiplier) / roundingMultiplier;
 
+      if (newValue === '' && config.allowEmpty) {
+        valueToWrite = newValue;
+      }
       if (valueToWrite !== current) {
         target(valueToWrite);
       } else {
@@ -58,6 +137,90 @@ ko.extenders.numeric = function (target, precision) {
   }).extend({ notify: 'always' });
   result(target());
   return result;
+};
+
+ko.bindingHandlers.numericTextInput = {
+  init: function (element, valueAccessor, allBindings) {
+    var bindingOptions = ko.unwrap(valueAccessor());
+    var numericValue = ko.observable(bindingOptions.value()).extend({ numeric: { precision: bindingOptions.precision, allowEmpty: typeof bindingOptions.allowEmpty !== 'undefined' && bindingOptions.allowEmpty } });
+    numericValue.subscribe(function(newValue) { bindingOptions.value(newValue) });
+    ko.bindingHandlers.textInput.init(element, function() { return numericValue }, allBindings);
+  }
+};
+
+ko.bindingHandlers.radialMenu = {
+  init: function(element, valueAccessor) {
+    var $element = $(element);
+    var options = valueAccessor();
+
+    var alternatives = options.alternatives;
+    var selected = options.selected; // Will be set before onSelect is called
+    var mainAlt = options.mainAlternative; // Alternative for clicking center
+    var onSelect = options.onSelect || $.noop;
+    var minRadius = options.minRadius || 70;
+    var alternativeCss = options.alternativeCss;
+    var alternativeSize = options.alternativeSize || 65;
+
+    var selectAttribute = options.selectAttribute;
+    var textRenderer = options.textRenderer || function(item) {
+        return item[selectAttribute]();
+      };
+
+    var allAlternatives = $("<div>").hide();
+
+    var hideTimeout = -1;
+    var hideAlternatives = function () {
+      clearTimeout(hideTimeout);
+      hideTimeout = setTimeout(function () {
+        allAlternatives.fadeOut();
+      }, 600);
+    };
+
+    var select = function (selectedValue) {
+      selected(selectedValue);
+      onSelect(selectedValue);
+      clearTimeout(hideTimeout);
+      allAlternatives.fadeOut();
+    };
+
+    if (alternatives().length > 1) {
+      window.setTimeout(function() {
+        var circumference = alternatives().length * alternativeSize;
+        var radius = Math.max(minRadius, circumference / Math.PI / 2);
+        var radIncrements = 2 * Math.PI / alternatives().length;
+        var currentRad = alternatives().length == 2 ? 2 * Math.PI : -0.5 * Math.PI;
+        var iconRadius = $element.find("i").width() / 2;
+
+        $.each(alternatives(), function (index, alternative) {
+          $("<div>")
+            .text(textRenderer(alternative))
+            .addClass(alternativeCss)
+            .css("left", radius * Math.cos(currentRad) + iconRadius)
+            .css("top", radius * Math.sin(currentRad) + iconRadius)
+            .on("click", function () {
+              select(alternative[selectAttribute]());
+            })
+            .on("mouseenter", function () {
+              clearTimeout(hideTimeout);
+            })
+            .on("mouseleave", hideAlternatives)
+            .appendTo(allAlternatives);
+          currentRad += radIncrements;
+        });
+        $element.append(allAlternatives);
+      }, 500);
+    }
+
+    $element.find("i")
+      .on("click", function() {
+        select(mainAlt());
+      })
+      .on("mouseenter", function() {
+        clearTimeout(hideTimeout);
+        allAlternatives.fadeIn();
+      })
+      .on("mouseleave", hideAlternatives);
+  }
 };
 
 ko.bindingHandlers.freshereditor = {
@@ -217,6 +380,14 @@ ko.bindingHandlers.daterangepicker = {
       label: "1s"
     },
     {
+      value: "+5SECONDS",
+      label: "5s"
+    },
+    {
+      value: "+30SECONDS",
+      label: "30s"
+    },
+    {
       value: "+1MINUTES",
       label: "1m"
     },
@@ -267,6 +438,10 @@ ko.bindingHandlers.daterangepicker = {
     {
       value: "+1YEARS",
       label: "1y"
+    },
+    {
+      value: "+10YEARS",
+      label: "10y"
     }
   ],
   EXTRA_INTERVAL_OPTIONS: [],
@@ -608,7 +783,7 @@ ko.bindingHandlers.daterangepicker = {
         _opts = enableOptions("1DAYS", "7DAYS", "1MONTHS", "6MONTHS");
       }
       if (_calculatedEndDate.diff(_calculatedStartDate, 'months') > 12) {
-        _opts = enableOptions("7DAYS", "1MONTHS", "6MONTHS", "1YEARS");
+        _opts = enableOptions("7DAYS", "1MONTHS", "6MONTHS", "1YEARS", "10YEARS");
       }
 
       $(".interval-select").html(renderOptions(_opts));
@@ -616,8 +791,104 @@ ko.bindingHandlers.daterangepicker = {
       matchIntervals(true);
     }
   }
-}
+};
 
+ko.bindingHandlers.splitDraggable = {
+  init: function (element, valueAccessor) {
+    var options = ko.unwrap(valueAccessor());
+    var leftPanelWidth = $.totalStorage(options.appName + "_left_panel_width") != null ? $.totalStorage(options.appName + "_left_panel_width") : 250;
+
+    var containerSelector = options.containerSelector || ".panel-container";
+    var leftPanelSelector = options.leftPanelSelector || ".left-panel";
+    var rightPanelSelector = options.rightPanelSelector || ".right-panel";
+
+    var onPosition = options.onPosition || function() {};
+
+    var $resizer = $(element);
+    var $leftPanel = $(leftPanelSelector);
+    var $rightPanel = $(rightPanelSelector);
+    var $container = $(containerSelector);
+
+    var positionPanels = function () {
+      if (ko.isObservable(options.leftPanelVisible) && ! options.leftPanelVisible()) {
+        $rightPanel.css("width", "100%");
+        $rightPanel.css("left", "0");
+      } else {
+        var totalWidth = $container.width();
+        leftPanelWidth = Math.min(leftPanelWidth, totalWidth - 100);
+        var rightPanelWidth = totalWidth - leftPanelWidth - $resizer.width();
+        $leftPanel.css("width", leftPanelWidth + "px");
+        $rightPanel.css("width", rightPanelWidth + "px");
+        $resizer.css("left", leftPanelWidth + "px");
+        $rightPanel.css("left", leftPanelWidth + $resizer.width() + "px");
+      }
+      onPosition();
+    };
+
+    if (ko.isObservable(options.leftPanelVisible)) {
+      options.leftPanelVisible.subscribe(positionPanels);
+    }
+
+    var dragTimeout = -1;
+    $resizer.draggable({
+      axis: "x",
+      containment: $container,
+      drag: function (event, ui) {
+        ui.position.left = Math.min($container.width() - $container.position().left - 200, Math.max(150, ui.position.left));
+
+        dragTimeout = window.setTimeout(function () {
+          $leftPanel.css("width", ui.position.left + "px");
+          leftPanelWidth = ui.position.left;
+          $rightPanel.css("width", $container.width() - ui.position.left - $resizer.width() + "px");
+          $rightPanel.css("left", ui.position.left + $resizer.width());
+          onPosition();
+        }, 10);
+
+      },
+      stop: function () {
+        $.totalStorage(options.appName + "_left_panel_width", leftPanelWidth);
+        window.setTimeout(positionPanels, 100);
+      }
+    });
+
+
+    var positionTimeout = -1;
+    $(window).resize(function() {
+      window.clearTimeout(positionTimeout);
+      positionTimeout = window.setTimeout(function () {
+        positionPanels()
+      }, 1);
+    });
+
+    function initialPositioning() {
+      if(! $container.is(":visible")) {
+        window.setTimeout(initialPositioning, 50);
+      } else {
+        positionPanels();
+        // Even though the container is visible some slow browsers might not
+        // have rendered the panels
+        window.setTimeout(positionPanels, 100);
+      }
+    }
+    initialPositioning();
+  }
+};
+
+ko.bindingHandlers.oneClickSelect = {
+  init: function (element) {
+    $(element).click(function() {
+      if (document.selection) {
+        var range = document.body.createTextRange();
+        range.moveToElementText(element);
+        range.select();
+      } else if (window.getSelection) {
+        var range = document.createRange();
+        range.selectNode(element);
+        window.getSelection().addRange(range);
+      }
+    });
+  }
+};
 
 ko.bindingHandlers.augmenthtml = {
   render: function (element, valueAccessor, allBindingsAccessor, viewModel) {
@@ -691,13 +962,14 @@ ko.bindingHandlers.clearable = {
 
 ko.bindingHandlers.spinedit = {
   init: function (element, valueAccessor, allBindingsAccessor, viewModel) {
-    $(element).spinedit({
+    var options = $.extend({
       minimum: 0,
       maximum: 10000,
       step: 5,
       value: ko.unwrap(valueAccessor()),
       numberOfDecimals: 0
-    });
+    }, allBindingsAccessor().override);
+    $(element).spinedit(options);
     $(element).on("valueChanged", function (e) {
       valueAccessor()(e.value);
     });
@@ -744,7 +1016,11 @@ ko.bindingHandlers.codemirror = {
       clearTimeout(sourceDelay);
       var _cm = cm;
       sourceDelay = setTimeout(function () {
-        valueAccessor().data(_cm.getValue());
+        var _value = _cm.getValue();
+        if (options.stripScript){
+          _value = _value.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
+        }
+        valueAccessor().data(_value);
         if ($(".widget-html-pill").parent().hasClass("active")) {
           $("[contenteditable=true]").html(stripHtmlFromFunctions(valueAccessor().data()));
         }
@@ -916,7 +1192,7 @@ ko.bindingHandlers.typeahead = {
       _options.minLength = 0;
     }
 
-    elem.typeahead(_options);
+    element.typeahead = elem.typeahead(_options);
 
     if (valueAccessor.triggerOnFocus) {
       elem.on('focus', function () {
@@ -935,13 +1211,31 @@ ko.bindingHandlers.typeahead = {
   },
   update: function (element, valueAccessor) {
     var elem = $(element);
-    var value = valueAccessor();
-    if (typeof value.target == "function") {
-      elem.val(value.target());
+    var valueAccessor = valueAccessor();
+    if (typeof valueAccessor.target == "function") {
+      elem.val(valueAccessor.target());
     }
     else {
-      elem.val(value.target);
+      elem.val(valueAccessor.target);
     }
+    if (valueAccessor.forceUpdateSource) {
+      element.typeahead.data('typeahead').source = function () {
+        var _source = ko.utils.unwrapObservable(valueAccessor.source);
+        if (valueAccessor.extraKeywords) {
+          _source = _source.concat(valueAccessor.extraKeywords.split(" "))
+        }
+
+        if (valueAccessor.sourceSuffix && _source) {
+          var _tmp = [];
+          _source.forEach(function(item){
+            _tmp.push(item + valueAccessor.sourceSuffix);
+          });
+          _source = _tmp;
+        }
+        return _source;
+      }
+    }
+
   }
 };
 
@@ -1103,7 +1397,6 @@ ko.bindingHandlers.hivechooser = {
     });
 
     self.jHueHiveAutocomplete({
-      skipColumns: true,
       showOnFocus: true,
       home: "/",
       onPathChange: function (path) {
@@ -1175,13 +1468,19 @@ ko.bindingHandlers.filechooser = {
       });
     }
 
-    self.after(getFileBrowseButton(self, true, valueAccessor, true, allBindingsAccessor));
+    self.after(getFileBrowseButton(self, true, valueAccessor, true, allBindingsAccessor, valueAccessor().isAddon));
   }
 };
 
 
-function getFileBrowseButton(inputElement, selectFolder, valueAccessor, stripHdfsPrefix, allBindingsAccessor) {
-  var _btn = $("<button>").addClass("btn").addClass("fileChooserBtn").text("..").click(function (e) {
+function getFileBrowseButton(inputElement, selectFolder, valueAccessor, stripHdfsPrefix, allBindingsAccessor, isAddon) {
+  var _btn;
+  if (isAddon) {
+    _btn = $("<span>").addClass("add-on muted pointer").text("..");
+  } else {
+    _btn = $("<button>").addClass("btn").addClass("fileChooserBtn").text("..");
+  }
+  _btn.click(function (e) {
     e.preventDefault();
     $("html").addClass("modal-open");
     // check if it's a relative path
@@ -1225,6 +1524,7 @@ function getFileBrowseButton(inputElement, selectFolder, valueAccessor, stripHdf
       $("#chooseFile").modal("show");
       $("#chooseFile").on("hidden", function(){
         $("html").removeClass("modal-open");
+        $(".modal-backdrop").remove();
       });
     }
 
@@ -1274,43 +1574,541 @@ function getFileBrowseButton(inputElement, selectFolder, valueAccessor, stripHdf
 }
 
 ko.bindingHandlers.datepicker = {
-    init: function(element, valueAccessor, allBindings, viewModel, bindingContext){
-      var DATE_FORMAT = "YYYY-MM-DD";
-      var TIME_FORMAT = "HH:mm:ss";
-      var DATETIME_FORMAT = DATE_FORMAT + " " + TIME_FORMAT;
-      var _el = $(element);
-      var options = ko.unwrap(valueAccessor());
-      _el.datepicker({
-        format: DATE_FORMAT.toLowerCase()
-      }).on("changeDate", function () {
-        allBindings().value(_el.val());
-      });
+  init: function (element, valueAccessor, allBindings, viewModel, bindingContext) {
+    var _el = $(element);
+    var _options = ko.unwrap(valueAccessor());
+    _el.datepicker({
+      format: "yyyy-mm-dd"
+    }).on("show", function (e) {
+      if (_options.momentFormat) {
+        _el.datepicker("setValue", moment(_el.val()).utc().format("YYYY-MM-DD"));
+      }
+    }).on("changeDate", function (e) {
+      setDate(e.date);
+    }).on("hide", function (e) {
+      setDate(e.date);
+    });
 
+    function setDate(d) {
+      if (_options.momentFormat) {
+        _el.val(moment(d).utc().format(_options.momentFormat));
+      }
+      allBindings().value(_el.val());
     }
+  }
 }
 
 
 ko.bindingHandlers.timepicker = {
-    init: function(element, valueAccessor, allBindings, viewModel, bindingContext){
-      var DATE_FORMAT = "YYYY-MM-DD";
-      var TIME_FORMAT = "HH:mm:ss";
-      var DATETIME_FORMAT = DATE_FORMAT + " " + TIME_FORMAT;
-      var _el = $(element);
-      var options = ko.unwrap(valueAccessor());
+  init: function (element, valueAccessor, allBindings, viewModel, bindingContext) {
+    var _el = $(element);
+    _el.timepicker({
+      minuteStep: 1,
+      showSeconds: false,
+      showMeridian: false,
+      defaultTime: false
+    });
+    _el.on("change", function () {
+      if (_el.val().substr(-1) != "Z") {
+        _el.val(_el.val() + "Z");
+        _el.trigger("change");
+      }
+    });
+  }
+}
 
-      _el.timepicker({
-        minuteStep: 1,
-        showSeconds: false,
-        showMeridian: false,
-        defaultTime: false
+
+ko.bindingHandlers.textSqueezer = {
+  init: function (element, valueAccessor) {
+    var value = valueAccessor();
+    $(element).text(ko.unwrap(value));
+    $(element).textSqueezer({
+      decimalPrecision: 2
+    });
+  },
+  update: function (element, valueAccessor) {
+    var value = valueAccessor();
+    $(element).text(ko.unwrap(value));
+    $(element).trigger("redraw");
+  }
+};
+
+
+ko.toJSONObject = function (koObj) {
+  return JSON.parse(ko.toJSON(koObj));
+}
+
+ko.toCleanJSON = function (koObj) {
+  return ko.toJSON(koObj, function (key, value) {
+    if (key == "__ko_mapping__") {
+      return;
+    }
+    else {
+      return value;
+    }
+  });
+}
+
+
+ko.bindingHandlers.aceEditor = {
+  init: function (element, valueAccessor) {
+    var $el = $(element);
+    var options = ko.unwrap(valueAccessor());
+    var onFocus = options.onFocus || function () {};
+    var onBlur = options.onBlur || function () {};
+    var onChange = options.onChange || function () {};
+    var onCopy = options.onCopy || function () {};
+    var onPaste = options.onPaste || function () {};
+    var onAfterExec = options.onAfterExec || function () {};
+    var onExecute = options.onExecute || function () {};
+    var autocompleter = options.autocompleter;
+
+    $el.text(options.value());
+
+    var editor = ace.edit($el.attr("id"));
+    editor.session.setMode(ko.utils.unwrapObservable(options.mode));
+    if (ko.isObservable(options.mode)) {
+      options.mode.subscribe(function (newValue) {
+        editor.session.setMode(newValue);
       });
+    }
+    editor.on("focus", function () {
+      huePubSub.publish("hue.ace.activeMode", ko.utils.unwrapObservable(options.mode));
+    });
 
-      _el.on("change", function () {
-        if (_el.val().substr(-1) != "Z") {
-          _el.val(_el.val() + "Z");
-          _el.trigger("change");
+    if (ko.isObservable(options.errors)) {
+      options.errors.subscribe(function(errors) {
+        editor.clearErrors();
+        if (errors.length > 0) {
+          errors.forEach(function (err) {
+            if (err.line !== null) {
+              editor.addError(err.message, err.line);
+            }
+          });
         }
       });
-
     }
-}
+
+    editor.setTheme($.totalStorage("hue.ace.theme") || "ace/theme/hue");
+
+    var editorOptions = {
+      enableBasicAutocompletion: true,
+      enableSnippets: true,
+      enableLiveAutocompletion: true,
+      showGutter: false,
+      showLineNumbers: false,
+      showPrintMargin: false,
+      minLines: 6,
+      maxLines: 25
+    };
+
+    var userOptions = $.totalStorage("hue.ace.options") || {};
+    $.extend(editorOptions, options.editorOptions || userOptions);
+
+    editor.setOptions(editorOptions);
+
+    var placeHolderElement = null;
+    var placeHolderVisible = false;
+    if (options.placeholder) {
+      placeHolderElement = $("<div>")
+        .text(options.placeholder)
+        .css("margin-left", "6px")
+        .addClass("ace_invisible ace_emptyMessage");
+      if (editor.getValue().length == 0) {
+        placeHolderElement.appendTo(editor.renderer.scroller);
+        placeHolderVisible = true;
+      }
+    }
+
+    editor.on("input", function() {
+      if (editor.getValue().length == 0 && !placeHolderVisible) {
+        placeHolderElement.appendTo(editor.renderer.scroller);
+        placeHolderVisible = true;
+      } else if (placeHolderVisible) {
+        placeHolderElement.remove();
+        placeHolderVisible = false;
+      }
+    });
+
+    editor.on("focus", function () {
+      onFocus(editor);
+    });
+
+    editor.on("blur", function () {
+      options.value(editor.getValue());
+      onBlur(editor);
+    });
+
+    editor.on("copy", function () {
+      onCopy(editor);
+    });
+
+    editor.on("paste", function () {
+      onPaste(editor);
+    });
+
+    ace.define("huelink", [], function (require, exports, module) {
+      "use strict";
+
+      var Oop = ace.require("ace/lib/oop");
+      var Event = ace.require("ace/lib/event");
+      var Range = ace.require("ace/range").Range;
+      var EventEmitter = ace.require("ace/lib/event_emitter").EventEmitter;
+      var Tooltip = ace.require("ace/tooltip").Tooltip;
+
+      var HueLink = function (editor) {
+        if (editor.hueLink)
+          return;
+        editor.hueLink = this;
+        this.editor = editor;
+        Tooltip.call(this, editor.container);
+
+        this.update = this.update.bind(this);
+        this.onMouseMove = this.onMouseMove.bind(this);
+        this.onMouseOut = this.onMouseOut.bind(this);
+        this.onClick = this.onClick.bind(this);
+        Event.addListener(editor.renderer.scroller, "mousemove", this.onMouseMove);
+        Event.addListener(editor.renderer.content, "mouseout", this.onMouseOut);
+        Event.addListener(editor.renderer.content, "dblclick", this.onClick);
+      };
+
+      Oop.inherits(HueLink, Tooltip);
+
+      (function () {
+        Oop.implement(this, EventEmitter);
+
+        this.token = {};
+        this.marker = null;
+
+        this.update = function () {
+          this.$timer = null;
+          var editor = this.editor;
+          var renderer = editor.renderer;
+
+          var canvasPos = renderer.scroller.getBoundingClientRect();
+          var offset = (this.x + renderer.scrollLeft - canvasPos.left - renderer.$padding) / renderer.characterWidth;
+          var row = Math.floor((this.y + renderer.scrollTop - canvasPos.top) / renderer.lineHeight);
+          var col = Math.round(offset);
+
+          var screenPos = {row: row, column: col, side: offset - col > 0 ? 1 : -1};
+          var session = editor.session;
+          var docPos = session.screenToDocumentPosition(screenPos.row, screenPos.column);
+
+          var selectionRange = editor.selection.getRange();
+          if (!selectionRange.isEmpty()) {
+            if (selectionRange.start.row <= row && selectionRange.end.row >= row)
+              return this.clear();
+          }
+
+          var line = editor.session.getLine(docPos.row);
+          if (docPos.column == line.length) {
+            var clippedPos = editor.session.documentToScreenPosition(docPos.row, docPos.column);
+            if (clippedPos.column != screenPos.column) {
+              return this.clear();
+            }
+          }
+
+          var token = editor.session.getTokenAt(docPos.row, docPos.column);
+
+          var currentAssistTables = [];
+
+          huePubSub.subscribe('assist.firstLevelChange', function (tables) {
+            currentAssistTables = tables;
+          });
+
+          if (token) {
+            var isMetastoreLink = Object.keys(currentAssistTables).indexOf(token.value) > -1;
+
+            if (token.value.indexOf("'/") == 0 && token.value.lastIndexOf("'") == token.value.length - 1 ||
+                token.value.indexOf("\"/") == 0 && token.value.lastIndexOf("\"") == token.value.length - 1 ||
+                isMetastoreLink) {
+              // add highlight for the clicked token
+              var range = new AceRange(docPos.row, token.start, docPos.row, token.start + token.value.length);
+              editor.session.removeMarker(this.marker);
+              this.marker = editor.session.addMarker(range, 'ace_bracket red');
+              editor.renderer.setCursorStyle("pointer");
+              this.setText(options.openIt);
+              if ($.totalStorage("hue.ace.showLinkTooltips") == null || $.totalStorage("hue.ace.showLinkTooltips")) {
+                this.show(null, this.x + 10, this.y + 10);
+              }
+              this.link = token;
+              this.isClearable = true
+            }
+            else {
+              this.clear();
+            }
+          }
+          else {
+            this.clear();
+          }
+        };
+
+        this.clear = function () {
+          if (this.isClearable) {
+            this.hide(); // hides the tooltip
+            this.editor.session.removeMarker(this.marker);
+            this.editor.renderer.setCursorStyle("");
+            this.isClearable = false;
+            this.link = null;
+          }
+        };
+
+        this.onClick = function (e) {
+          if (this.link) {
+            this.link.editor = this.editor;
+            this._signal("open", this.link);
+            this.clear()
+          }
+        };
+
+        this.onMouseMove = function (e) {
+          if (this.editor.$mouseHandler.isMousePressed) {
+            if (!this.editor.selection.isEmpty())
+              this.clear();
+            return;
+          }
+          this.x = e.clientX;
+          this.y = e.clientY;
+          this.update();
+        };
+
+        this.onMouseOut = function (e) {
+          Tooltip.prototype.hide();
+          this.clear();
+        };
+
+        this.destroy = function () {
+          this.onMouseOut();
+          Event.removeListener(this.editor.renderer.scroller, "mousemove", this.onMouseMove);
+          Event.removeListener(this.editor.renderer.content, "mouseout", this.onMouseOut);
+          delete this.editor.hueLink;
+        };
+
+      }).call(HueLink.prototype);
+
+      exports.HueLink = HueLink;
+
+    });
+
+
+    var currentAssistDb = "";
+    huePubSub.subscribe('assist.mainObjectChange', function (db) {
+      currentAssistDb = db;
+    });
+
+
+    HueLink = ace.require("huelink").HueLink;
+    editor.hueLink = new HueLink(editor);
+    editor.hueLink.on("open", function (token) {
+      if (token.value.indexOf("'/") == 0 && token.value.lastIndexOf("'") == token.value.length - 1) {
+        window.open("/filebrowser/#" + token.value.replace(/'/gi, ""));
+      }
+      else if (token.value.indexOf("\"/") == 0 && token.value.lastIndexOf("\"") == token.value.length - 1) {
+        window.open("/filebrowser/#" + token.value.replace(/\"/gi, ""));
+      }
+      else {
+        window.open("/metastore/table/" + currentAssistDb + "/" + token.value);
+      }
+    });
+
+    function newCompleter(items) {
+      return {
+        getCompletions: function (editor, session, pos, prefix, callback) {
+          callback(null, items);
+        }
+      }
+    }
+
+    var originalCompleters = editor.completers.slice();
+
+    var sql_terms = /\b(FROM|TABLE|STATS|REFRESH|METADATA|DESCRIBE|ORDER BY|ON|WHERE|SELECT|LIMIT|GROUP|SORT)\b/g;
+
+    var refreshAutoComplete = function (callback) {
+      editor.completers = originalCompleters.slice();
+      if (options.extraCompleters().length > 0) {
+        options.extraCompleters().forEach(function (complete) {
+          editor.completers.push(complete);
+        });
+      }
+
+      if (typeof autocompleter != "undefined" && autocompleter != null && (editor.session.getMode().$id == "ace/mode/hive" || editor.session.getMode().$id == "ace/mode/impala")) {
+        var before = editor.getTextBeforeCursor(";");
+        var after = editor.getTextAfterCursor(";");
+        editor.showSpinner();
+        autocompleter.autocomplete(before, after, function(result) {
+          editor.hideSpinner();
+          if (result.length > 0) {
+            editor.completers.push(newCompleter(result));
+          }
+          callback();
+        });
+      } else {
+        callback();
+      }
+    };
+
+    var originalExec = editor.commands.byName.startAutocomplete.exec;
+
+    editor.commands.byName.startAutocomplete.exec = function (editor) {
+      refreshAutoComplete(function() {
+        originalExec(editor);
+      });
+    };
+
+    editor.previousSize = 0;
+
+    window.setInterval(function(){
+      editor.session.getMode().$id = valueAccessor().mode(); // forces the id again because of Ace command internals
+    }, 100);
+
+    editor.middleClick = false;
+    editor.on("mousedown", function (e) {
+      if (e.domEvent.which == 2) { // middle click
+        editor.middleClick = true;
+        var tempText = editor.getSelectedText();
+        if (e.$pos) {
+          editor.session.insert(e.$pos, tempText);
+        }
+        window.setTimeout(function () {
+          editor.middleClick = false;
+          if (e.$pos) {
+            editor.moveCursorTo(e.$pos.row, e.$pos.column + tempText.length);
+          }
+        }, 200);
+      }
+    });
+
+    editor.on("change", function (e) {
+      editor.clearErrors();
+      editor.session.getMode().$id = valueAccessor().mode();
+      var currentSize = editor.session.getLength();
+      if (currentSize != editor.previousSize && currentSize >= editorOptions.minLines && currentSize <= editorOptions.maxLines){
+        editor.previousSize = editor.session.getLength();
+        $(document).trigger("editorSizeChanged");
+      }
+      onChange(e, editor, valueAccessor);
+    });
+
+    editor.commands.addCommand({
+      name: "execute",
+      bindKey: {win: "Ctrl-Enter", mac: "Command-Enter|Ctrl-Enter"},
+      exec: function () {
+        options.value(editor.getValue());
+        onExecute();
+      }
+    });
+
+    huePubSub.subscribe("assist.dblClickItem", function(value) {
+      editor.session.insert(editor.getCursorPosition(),value);
+    });
+
+    editor.commands.on("afterExec", function (e) {
+      if (e.command.name === "insertstring") {
+        var triggerAutocomplete = /\.$/.test(e.args);
+        if(e.args.toLowerCase().indexOf("? from ") == 0) {
+          editor.moveCursorTo(editor.getCursorPosition().row, editor.getCursorPosition().column - e.args.length + 1);
+          editor.removeTextBeforeCursor(1);
+          triggerAutocomplete = true;
+        }
+
+        if (triggerAutocomplete) {
+          window.setTimeout(function () {
+            editor.execCommand("startAutocomplete");
+          }, 100);
+        }
+      }
+      editor.session.getMode().$id = valueAccessor().mode(); // forces the id again because of Ace command internals
+      if ((editor.session.getMode().$id == "ace/mode/hive" || editor.session.getMode().$id == "ace/mode/impala") && e.args == ".") {
+        editor.execCommand("startAutocomplete");
+      }
+      // if it's pig and before it's LOAD ' we disable the autocomplete and show a filechooser btn
+      if (editor.session.getMode().$id = "ace/mode/pig" && e.args) {
+        var textBefore = editor.getTextBeforeCursor();
+        if ((e.args == "'" && textBefore.toUpperCase().indexOf("LOAD ") > -1 && textBefore.toUpperCase().indexOf("LOAD ") == textBefore.toUpperCase().length - 5)
+            || textBefore.toUpperCase().indexOf("LOAD '") > -1 && textBefore.toUpperCase().indexOf("LOAD '") == textBefore.toUpperCase().length - 6) {
+          editor.disableAutocomplete();
+          var btn = editor.showFileButton();
+          btn.on("click", function (ie) {
+            ie.preventDefault();
+            if ($(".ace-filechooser-content").data("spinner") == null) {
+              $(".ace-filechooser-content").data("spinner", $(".ace-filechooser-content").html());
+            }
+            else {
+              $(".ace-filechooser-content").html($(".ace-filechooser-content").data("spinner"));
+            }
+            $(".ace-filechooser-content").jHueFileChooser({
+              onFileChoose: function (filePath) {
+                editor.session.insert(editor.getCursorPosition(), filePath + "'");
+                editor.hideFileButton();
+                editor.enableAutocomplete();
+                $(".ace-filechooser").hide();
+              },
+              selectFolder: false,
+              createFolder: false
+            });
+            $(".ace-filechooser").css({ "top": $(ie.currentTarget).position().top, "left": $(ie.currentTarget).position().left}).show();
+          });
+        }
+        else {
+          editor.hideFileButton();
+          editor.enableAutocomplete();
+        }
+        if (e.args != "'" && textBefore.toUpperCase().indexOf("LOAD '") > -1 && textBefore.toUpperCase().indexOf("LOAD '") == textBefore.toUpperCase().length - 6) {
+          editor.hideFileButton();
+          editor.enableAutocomplete();
+        }
+      }
+      onAfterExec(e, editor, valueAccessor);
+    });
+
+    editor.$blockScrolling = Infinity
+    element.originalCompleters = editor.completers;
+    options.aceInstance(editor);
+  },
+  update: function (element, valueAccessor) {
+    var options = ko.unwrap(valueAccessor());
+    if (options.aceInstance()) {
+      var editor = options.aceInstance();
+      editor.completers = element.originalCompleters.slice();
+      if (options.extraCompleters().length > 0) {
+        options.extraCompleters().forEach(function (complete) {
+          editor.completers.push(complete);
+        });
+      }
+    }
+  }
+};
+
+ko.bindingHandlers.medium = {
+  init: function (element, valueAccessor, allBindings) {
+    var editor = new MediumEditor($(element), {
+      buttons: ['header1', 'header2', 'bold', 'italic', 'underline', 'quote', 'anchor', 'orderedlist', 'unorderedlist', 'pre', 'outdent', 'indent'],
+      buttonLabels: 'fontawesome',
+      anchorTarget: true,
+      anchorInputPlaceholder: '${ _("Paste or type a link") }',
+      anchorInputCheckboxLabel: '${ _("Open in new window") }',
+      firstHeader: 'h2',
+      secondHeader: 'h3'
+    });
+    $(element).on('blur', function () {
+      allBindings().value($(element).html())
+    });
+  }
+};
+
+ko.bindingHandlers.verticalSlide = {
+  init: function(element, valueAccessor) {
+    if (ko.utils.unwrapObservable(valueAccessor())) {
+      $(element).show();
+    } else {
+      $(element).hide();
+    }
+  },
+  update: function(element, valueAccessor) {
+    if (ko.utils.unwrapObservable(valueAccessor())) {
+      $(element).slideDown('fast');
+    } else {
+      $(element).slideUp('fast');
+    }
+  }
+};

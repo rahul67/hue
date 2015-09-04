@@ -6,7 +6,7 @@
     <parent>
         <groupId>com.cloudera.hue.livy</groupId>
         <artifactId>livy-main</artifactId>
-        <version>3.7.0-SNAPSHOT</version>
+        <version>3.9.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -84,6 +84,20 @@
                           </excludes>
                       </filter>
                   </filters>
+
+                  <relocations>
+                      <relocation>
+                          <pattern>org.eclipse.jetty</pattern>
+                          <shadedPattern>com.cloudera.hue.jetty</shadedPattern>
+                          <excludes>
+                              <exclude>com/google/common/base/Absent*</exclude>
+                              <exclude>com/google/common/base/Function*</exclude>
+                              <exclude>com/google/common/base/Optional*</exclude>
+                              <exclude>com/google/common/base/Present*</exclude>
+                              <exclude>com/google/common/base/Supplier</exclude>
+                          </excludes>
+                      </relocation>
+                  </relocations>
               </configuration>
 
               <executions>

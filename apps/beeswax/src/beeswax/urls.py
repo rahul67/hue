@@ -57,11 +57,15 @@ urlpatterns += patterns(
 urlpatterns += patterns(
   'beeswax.api',
 
+  url(r'^api/session/$', 'get_session', name='api_get_session'),
   url(r'^api/autocomplete/$', 'autocomplete', name='api_autocomplete_databases'),
   url(r'^api/autocomplete/(?P<database>\w+)$', 'autocomplete', name='api_autocomplete_tables'),
   url(r'^api/autocomplete/(?P<database>\w+)/$', 'autocomplete', name='api_autocomplete_tables'),
   url(r'^api/autocomplete/(?P<database>\w+)/(?P<table>\w+)$', 'autocomplete', name='api_autocomplete_columns'),
   url(r'^api/autocomplete/(?P<database>\w+)/(?P<table>\w+)/$', 'autocomplete', name='api_autocomplete_columns'),
+  url(r'^api/autocomplete/(?P<database>\w+)/(?P<table>\w+)/(?P<column>\w+)$', 'autocomplete', name='api_autocomplete_column'),
+  url(r'^api/autocomplete/(?P<database>\w+)/(?P<table>\w+)/(?P<column>\w+)/$', 'autocomplete', name='api_autocomplete_column'),
+  url(r'^api/autocomplete/(?P<database>\w+)/(?P<table>\w+)/(?P<column>\w+)/(?P<nested>.+)$', 'autocomplete', name='api_autocomplete_nested'),
   url(r'^api/design/(?P<design_id>\d+)?$', 'save_query_design', name='api_save_design'),
   url(r'^api/design/(?P<design_id>\d+)/get$', 'fetch_saved_design', name='api_fetch_saved_design'),
   url(r'^api/query/(?P<query_history_id>\d+)/get$', 'fetch_query_history', name='api_fetch_query_history'),
@@ -75,4 +79,7 @@ urlpatterns += patterns(
   url(r'^api/watch/json/(?P<id>\d+)$', 'watch_query_refresh_json', name='api_watch_query_refresh_json'),
 
   url(r'^api/table/(?P<database>\w+)/(?P<table>\w+)$', 'describe_table', name='describe_table'),
+  url(r'^api/analyze/(?P<database>\w+)/(?P<table>\w+)/(?P<columns>\w+)?$', 'analyze_table', name='analyze_table'),
+  url(r'^api/table/(?P<database>\w+)/(?P<table>\w+)/stats/(?P<column>\w+)?$', 'get_table_stats', name='get_table_stats'),
+  url(r'^api/table/(?P<database>\w+)/(?P<table>\w+)/terms/(?P<column>\w+)/(?P<prefix>\w+)?$', 'get_top_terms', name='get_top_terms'),
 )

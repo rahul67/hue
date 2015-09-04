@@ -16,7 +16,6 @@
 
 import logging
 import posixpath
-import threading
 
 from desktop.conf import TIME_ZONE
 from desktop.conf import DEFAULT_USER
@@ -88,7 +87,8 @@ class OozieApi(object):
 
     return defaults
 
-  VALID_JOB_FILTERS = ('name', 'user', 'group', 'status')
+  VALID_JOB_FILTERS = ('name', 'user', 'group', 'status', 'startcreatedtime')
+  VALID_LOG_FILTERS = {'recent', 'limit', 'loglevel', 'text'}
 
   def get_jobs(self, jobtype, offset=None, cnt=None, filters=None):
     """
@@ -142,10 +142,23 @@ class OozieApi(object):
     wf = Workflow(self, resp)
     return wf
 
-  def get_coordinator(self, jobid):
+  def get_coordinator(self, jobid, offset=None, cnt=None, filters=None):
     params = self._get_params()
-    params.update({'len': -1})
+    if offset is not None:
+      params['offset'] = str(offset)
+    if cnt is not None:
+      params['len'] = str(cnt)
+    if filters is None:
+      filters = {}
     params.update({'order': 'desc'})
+
+    filter_list = []
+    for key, val in filters:
+      if key not in OozieApi.VALID_JOB_FILTERS:
+        raise ValueError('"%s" is not a valid filter for selecting jobs' % (key,))
+      filter_list.append('%s=%s' % (key, val))
+    params['filter'] = ';'.join(filter_list)
+
     resp = self._root.get('job/%s' % (jobid,), params)
     return Coordinator(self, resp)
 
@@ -160,15 +173,31 @@ class OozieApi(object):
     """
     params = self._get_params()
     params['show'] = 'definition'
-    xml = self._root.get('job/%s' % (jobid,), params)
-    return xml
+    return self._root.get('job/%s' % (jobid,), params)
 
-  def get_job_log(self, jobid):
+
+  def get_job_log(self, jobid, logfilter=None):
     """
     get_job_log(jobid) -> Log (xml string)
     """
     params = self._get_params()
     params['show'] = 'log'
+
+    filter_list = []
+    if logfilter is None:
+      logfilter = []
+    for key, val in logfilter:
+      if key not in OozieApi.VALID_LOG_FILTERS:
+        raise ValueError('"%s" is not a valid filter for job logs' % (key,))
+      filter_list.append('%s=%s' % (key, val))
+    params['logfilter'] = ';'.join(filter_list)
+    return self._root.get('job/%s' % (jobid,), params)
+
+
+  def get_job_status(self, jobid):
+    params = self._get_params()
+    params['show'] = 'status'
+
     xml = self._root.get('job/%s' % (jobid,), params)
     return xml
 
@@ -188,7 +217,7 @@ class OozieApi(object):
     job_control(jobid, action) -> None
     Raise RestException on error.
     """
-    if action not in ('start', 'suspend', 'resume', 'kill', 'rerun', 'coord-rerun', 'bundle-rerun', 'change'):
+    if action not in ('start', 'suspend', 'resume', 'kill', 'rerun', 'coord-rerun', 'bundle-rerun', 'change', 'ignore'):
       msg = 'Invalid oozie job action: %s' % (action,)
       LOG.error(msg)
       raise ValueError(msg)
@@ -236,6 +265,20 @@ class OozieApi(object):
     params = self._get_params()
     resp = self._root.post('jobs', params, data=config_gen(properties), contenttype=_XML_CONTENT_TYPE)
     return resp['id']
+
+  def dryrun(self, properties=None):
+    defaults = {
+      'user.name': self.user,
+    }
+
+    if properties is not None:
+      defaults.update(properties)
+
+    properties = defaults
+
+    params = self._get_params()
+    params['action'] = 'dryrun'
+    return self._root.post('jobs', params, data=config_gen(properties), contenttype=_XML_CONTENT_TYPE)
 
   def rerun(self, jobid, properties=None, params=None):
     properties = self._get_oozie_properties(properties)

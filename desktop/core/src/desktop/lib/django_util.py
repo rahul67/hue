@@ -41,6 +41,8 @@ import desktop.lib.thrift_util
 from desktop.lib import django_mako
 from desktop.lib.json_utils import JSONEncoderForHTML
 
+LOG = logging.getLogger(__name__)
+
 # Values for template_lib parameter
 DJANGO = 'django'
 MAKO = 'mako'
@@ -327,6 +329,7 @@ def get_app_nice_name(app_name):
   try:
     return desktop.appmanager.get_desktop_module(app_name).settings.NICE_NAME
   except:
+    LOG.exception('failed to get nice name for app %s' % app_name)
     return app_name
 
 class TruncatingModel(models.Model):
@@ -462,10 +465,10 @@ class JsonResponse(HttpResponse):
       to ``True``.
     """
 
-    def __init__(self, data, encoder=DjangoJSONEncoder, safe=True, **kwargs):
+    def __init__(self, data, encoder=DjangoJSONEncoder, safe=True, indent=None, **kwargs):
         if safe and not isinstance(data, dict):
             raise TypeError('In order to allow non-dict objects to be '
                 'serialized set the safe parameter to False')
         kwargs.setdefault('content_type', 'application/json')
-        data = json.dumps(data, cls=encoder)
+        data = json.dumps(data, cls=encoder, indent=indent)
         super(JsonResponse, self).__init__(content=data, **kwargs)

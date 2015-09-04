@@ -17,7 +17,7 @@
 
 <%namespace name="common" file="workflow-common.xml.mako" />
 
-    <action name="${ node['name'] }"${ common.credentials(node['properties']['credentials']) }>
+    <action name="${ node['name'] }"${ common.credentials(node['properties']['credentials']) }${ common.retry_max(node['properties']['retry_max']) }${ common.retry_interval(node['properties']['retry_interval']) }>
         <sqoop xmlns="uri:oozie:sqoop-action:0.2">
             <job-tracker>${'${'}jobTracker}</job-tracker>
             <name-node>${'${'}nameNode}</name-node>
@@ -26,13 +26,13 @@
             % if node['properties']['job_xml']:
               <job-xml>${ node['properties']['job_xml'] }</job-xml>
             % endif
-            ${ common.configuration(node['properties']['properties']) }
+            ${ common.configuration(node['properties']['job_properties']) }
 
             % if node['properties']['command']:
             <command>${ node['properties']['command'] }</command>
             % endif
 
-            % for param in node['properties']['parameters']:
+            % for param in node['properties']['arguments']:
               <arg>${ param['value'] }</arg>
             % endfor
 

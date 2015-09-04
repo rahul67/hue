@@ -16,18 +16,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
+import json
 import logging
 
 from nose.tools import assert_true, assert_false, assert_equal, assert_not_equal
-from django.contrib.auth.models import User
-from django.core.urlresolvers import reverse
 
-from desktop.lib.django_test_util import make_logged_in_client
-from desktop.lib.test_utils import grant_access, add_permission, add_to_group, reformat_json, reformat_xml
-
-
-from oozie.models2 import Job, Workflow, find_dollar_variables, find_dollar_braced_variables
+from oozie.models2 import Workflow, find_dollar_variables, find_dollar_braced_variables, Node
 
 
 LOG = logging.getLogger(__name__)
@@ -43,7 +37,7 @@ class TestEditor():
     assert_equal(['input', 'LIMIT', 'out'], find_dollar_variables("""
 data = '$input';
 $out = LIMIT data $LIMIT; -- ${nah}
-$output = STORE "$out";   
+$output = STORE "$out";
     """))
 
     assert_equal(['max_salary', 'limit'], find_dollar_variables("""
@@ -60,17 +54,43 @@ LIMIT $limit"""))
     assert_equal(['field', 'tablename', 'LIMIT'], find_dollar_braced_variables("""
     SELECT ${field}
     FROM ${hivevar:tablename}
-    LIMIT ${hiveconf:LIMIT}  
+    LIMIT ${hiveconf:LIMIT}
     """))
 
 
   def test_workflow_gen_xml(self):
     assert_equal([
-        u'<workflow-app', u'name="My_Workflow"', u'xmlns="uri:oozie:workflow:0.5">', u'<start', u'to="End"/>', u'<kill', u'name="Kill">', u'<message>Action', u'failed,', 
+        u'<workflow-app', u'name="My_Workflow"', u'xmlns="uri:oozie:workflow:0.5">', u'<start', u'to="End"/>', u'<kill', u'name="Kill">', u'<message>Action', u'failed,',
         u'error', u'message[${wf:errorMessage(wf:lastErrorNode())}]</message>', u'</kill>', u'<end', u'name="End"/>', u'</workflow-app>'],
         self.wf.to_xml({'output': '/path'}).split()
     )
 
+  def test_workflow_map_reduce_gen_xml(self):
+    wf = Workflow(data="{\"layout\": [{\"oozieRows\": [{\"enableOozieDropOnBefore\": true, \"enableOozieDropOnSide\": true, \"enableOozieDrop\": false, \"widgets\": [{\"status\": \"\", \"logsURL\": \"\", \"name\": \"MapReduce job\", \"widgetType\": \"mapreduce-widget\", \"oozieMovable\": true, \"ooziePropertiesExpanded\": false, \"properties\": {}, \"isLoading\": true, \"offset\": 0, \"actionURL\": \"\", \"progress\": 0, \"klass\": \"card card-widget span12\", \"oozieExpanded\": false, \"id\": \"0cf2d5d5-2315-0bda-bd53-0eec257e943f\", \"size\": 12}], \"id\": \"e2caca14-8afc-d7e0-287c-88accd0b4253\", \"columns\": []}], \"rows\": [{\"enableOozieDropOnBefore\": true, \"enableOozieDropOnSide\": true, \"enableOozieDrop\": false, \"widgets\": [{\"status\": \"\", \"logsURL\": \"\", \"name\": \"Start\", \"widgetType\": \"start-widget\", \"oozieMovable\": false, \"ooziePropertiesExpanded\": false, \"properties\": {}, \"isLoading\": true, \"offset\": 0, \"actionURL\": \"\", \"progress\": 0, \"klass\": \"card card-widget span12\", \"oozieExpanded\": false, \"id\": \"3f107997-04cc-8733-60a9-a4bb62cebffc\", \"size\": 12}], \"id\": \"ff63ee3f-df54-2fa3-477b-65f5e0f0632c\", \"columns\": []}, {\"enableOozieDropOnBefore\": true, \"enableOozieDropOnSide\": true, \"enableOozieDrop\": false, \"widgets\": [{\"status\": \"\", \"logsURL\": \"\", \"name\": \"MapReduce job\", \"widgetType\": \"mapreduce-widget\", \"oozieMovable\": true, \"ooziePropertiesExpanded\": false, \"properties\": {}, \"isLoading\": true, \"offset\": 0, \"actionURL\": \"\", \"progress\": 0, \"klass\": \"card card-widget span12\", \"oozieExpanded\": false, \"id\": \"0cf2d5d5-2315-0bda-bd53-0eec257e943f\", \"size\": 12}], \"id\": \"e2caca14-8afc-d7e0-287c-88accd0b4253\", \"columns\": []}, {\"enableOozieDropOnBefore\": true, \"enableOozieDropOnSide\": true, \"enableOozieDrop\": false, \"widgets\": [{\"status\": \"\", \"logsURL\": \"\", \"name\": \"End\", \"widgetType\": \"end-widget\", \"oozieMovable\": false, \"ooziePropertiesExpanded\": false, \"properties\": {}, \"isLoading\": true, \"offset\": 0, \"actionURL\": \"\", \"progress\": 0, \"klass\": \"card card-widget span12\", \"oozieExpanded\": false, \"id\": \"33430f0f-ebfa-c3ec-f237-3e77efa03d0a\", \"size\": 12}], \"id\": \"6a13d869-d04c-8431-6c5c-dbe67ea33889\", \"columns\": []}, {\"enableOozieDropOnBefore\": true, \"enableOozieDropOnSide\": true, \"enableOozieDrop\": false, \"widgets\": [{\"status\": \"\", \"logsURL\": \"\", \"name\": \"Kill\", \"widgetType\": \"kill-widget\", \"oozieMovable\": true, \"ooziePropertiesExpanded\": false, \"properties\": {}, \"isLoading\": true, \"offset\": 0, \"actionURL\": \"\", \"progress\": 0, \"klass\": \"card card-widget span12\", \"oozieExpanded\": false, \"id\": \"17c9c895-5a16-7443-bb81-f34b30b21548\", \"size\": 12}], \"id\": \"e3b56553-7a4f-43d2-b1e2-4dc433280095\", \"columns\": []}], \"oozieEndRow\": {\"enableOozieDropOnBefore\": true, \"enableOozieDropOnSide\": true, \"enableOozieDrop\": false, \"widgets\": [{\"status\": \"\", \"logsURL\": \"\", \"name\": \"End\", \"widgetType\": \"end-widget\", \"oozieMovable\": false, \"ooziePropertiesExpanded\": false, \"properties\": {}, \"isLoading\": true, \"offset\": 0, \"actionURL\": \"\", \"progress\": 0, \"klass\": \"card card-widget span12\", \"oozieExpanded\": false, \"id\": \"33430f0f-ebfa-c3ec-f237-3e77efa03d0a\", \"size\": 12}], \"id\": \"6a13d869-d04c-8431-6c5c-dbe67ea33889\", \"columns\": []}, \"oozieKillRow\": {\"enableOozieDropOnBefore\": true, \"enableOozieDropOnSide\": true, \"enableOozieDrop\": false, \"widgets\": [{\"status\": \"\", \"logsURL\": \"\", \"name\": \"Kill\", \"widgetType\": \"kill-widget\", \"oozieMovable\": true, \"ooziePropertiesExpanded\": false, \"properties\": {}, \"isLoading\": true, \"offset\": 0, \"actionURL\": \"\", \"progress\": 0, \"klass\": \"card card-widget span12\", \"oozieExpanded\": false, \"id\": \"17c9c895-5a16-7443-bb81-f34b30b21548\", \"size\": 12}], \"id\": \"e3b56553-7a4f-43d2-b1e2-4dc433280095\", \"columns\": []}, \"enableOozieDropOnAfter\": true, \"oozieStartRow\": {\"enableOozieDropOnBefore\": true, \"enableOozieDropOnSide\": true, \"enableOozieDrop\": false, \"widgets\": [{\"status\": \"\", \"logsURL\": \"\", \"name\": \"Start\", \"widgetType\": \"start-widget\", \"oozieMovable\": false, \"ooziePropertiesExpanded\": false, \"properties\": {}, \"isLoading\": true, \"offset\": 0, \"actionURL\": \"\", \"progress\": 0, \"klass\": \"card card-widget span12\", \"oozieExpanded\": false, \"id\": \"3f107997-04cc-8733-60a9-a4bb62cebffc\", \"size\": 12}], \"id\": \"ff63ee3f-df54-2fa3-477b-65f5e0f0632c\", \"columns\": []}, \"klass\": \"card card-home card-column span12\", \"enableOozieDropOnBefore\": true, \"drops\": [\"temp\"], \"id\": \"0c1908e7-0096-46e7-a16b-b17b1142a730\", \"size\": 12}], \"workflow\": {\"properties\": {\"job_xml\": \"\", \"description\": \"\", \"wf1_id\": null, \"sla_enabled\": false, \"deployment_dir\": \"/user/hue/oozie/workspaces/hue-oozie-1430228904.58\", \"schema_version\": \"uri:oozie:workflow:0.5\", \"sla\": [{\"key\": \"enabled\", \"value\": false}, {\"key\": \"nominal-time\", \"value\": \"${nominal_time}\"}, {\"key\": \"should-start\", \"value\": \"\"}, {\"key\": \"should-end\", \"value\": \"${30 * MINUTES}\"}, {\"key\": \"max-duration\", \"value\": \"\"}, {\"key\": \"alert-events\", \"value\": \"\"}, {\"key\": \"alert-contact\", \"value\": \"\"}, {\"key\": \"notification-msg\", \"value\": \"\"}, {\"key\": \"upstream-apps\", \"value\": \"\"}], \"show_arrows\": true, \"parameters\": [{\"name\": \"oozie.use.system.libpath\", \"value\": true}], \"properties\": []}, \"name\": \"My Workflow\", \"versions\": [\"uri:oozie:workflow:0.4\", \"uri:oozie:workflow:0.4.5\", \"uri:oozie:workflow:0.5\"], \"isDirty\": true, \"movedNode\": null, \"linkMapping\": {\"0cf2d5d5-2315-0bda-bd53-0eec257e943f\": [\"33430f0f-ebfa-c3ec-f237-3e77efa03d0a\"], \"33430f0f-ebfa-c3ec-f237-3e77efa03d0a\": [], \"3f107997-04cc-8733-60a9-a4bb62cebffc\": [\"0cf2d5d5-2315-0bda-bd53-0eec257e943f\"], \"17c9c895-5a16-7443-bb81-f34b30b21548\": []}, \"nodeIds\": [\"3f107997-04cc-8733-60a9-a4bb62cebffc\", \"33430f0f-ebfa-c3ec-f237-3e77efa03d0a\", \"17c9c895-5a16-7443-bb81-f34b30b21548\", \"0cf2d5d5-2315-0bda-bd53-0eec257e943f\"], \"nodes\": [{\"properties\": {}, \"name\": \"Start\", \"children\": [{\"to\": \"0cf2d5d5-2315-0bda-bd53-0eec257e943f\"}], \"actionParametersFetched\": false, \"type\": \"start-widget\", \"id\": \"3f107997-04cc-8733-60a9-a4bb62cebffc\", \"actionParameters\": []}, {\"properties\": {}, \"name\": \"End\", \"children\": [], \"actionParametersFetched\": false, \"type\": \"end-widget\", \"id\": \"33430f0f-ebfa-c3ec-f237-3e77efa03d0a\", \"actionParameters\": []}, {\"properties\": {\"message\": \"Action failed, error message[${wf:errorMessage(wf:lastErrorNode())}]\"}, \"name\": \"Kill\", \"children\": [], \"actionParametersFetched\": false, \"type\": \"kill-widget\", \"id\": \"17c9c895-5a16-7443-bb81-f34b30b21548\", \"actionParameters\": []}, {\"properties\": {\"retry_max\": [{\"value\": \"5\"}], \"files\": [], \"job_xml\": \"\", \"jar_path\": \"my_jar\", \"job_properties\": [{\"name\": \"prop_1_name\", \"value\": \"prop_1_value\"}], \"archives\": [], \"prepares\": [], \"credentials\": [], \"sla\": [{\"key\": \"enabled\", \"value\": false}, {\"key\": \"nominal-time\", \"value\": \"${nominal_time}\"}, {\"key\": \"should-start\", \"value\": \"\"}, {\"key\": \"should-end\", \"value\": \"${30 * MINUTES}\"}, {\"key\": \"max-duration\", \"value\": \"\"}, {\"key\": \"alert-events\", \"value\": \"\"}, {\"key\": \"alert-contact\", \"value\": \"\"}, {\"key\": \"notification-msg\", \"value\": \"\"}, {\"key\": \"upstream-apps\", \"value\": \"\"}]}, \"name\": \"mapreduce-0cf2\", \"children\": [{\"to\": \"33430f0f-ebfa-c3ec-f237-3e77efa03d0a\"}, {\"error\": \"17c9c895-5a16-7443-bb81-f34b30b21548\"}], \"actionParametersFetched\": false, \"type\": \"mapreduce-widget\", \"id\": \"0cf2d5d5-2315-0bda-bd53-0eec257e943f\", \"actionParameters\": []}], \"id\": 50019, \"nodeNamesMapping\": {\"0cf2d5d5-2315-0bda-bd53-0eec257e943f\": \"mapreduce-0cf2\", \"33430f0f-ebfa-c3ec-f237-3e77efa03d0a\": \"End\", \"3f107997-04cc-8733-60a9-a4bb62cebffc\": \"Start\", \"17c9c895-5a16-7443-bb81-f34b30b21548\": \"Kill\"}, \"uuid\": \"084f4d4c-00f1-62d2-e27e-e153c1f9acfb\"}}")
+
+    assert_equal([
+        u'<workflow-app', u'name="My_Workflow"', u'xmlns="uri:oozie:workflow:0.5">',
+        u'<start', u'to="mapreduce-0cf2"/>',
+        u'<kill', u'name="Kill">', u'<message>Action', u'failed,', u'error', u'message[${wf:errorMessage(wf:lastErrorNode())}]</message>', u'</kill>',
+        u'<action', u'name="mapreduce-0cf2"', 'retry-max="5">',
+        u'<map-reduce>',
+        u'<job-tracker>${jobTracker}</job-tracker>',
+        u'<name-node>${nameNode}</name-node>',
+        u'<configuration>',
+        u'<property>',
+        u'<name>prop_1_name</name>',
+        u'<value>prop_1_value</value>',
+        u'</property>',
+        u'</configuration>',
+        u'</map-reduce>',
+        u'<ok', u'to="End"/>',
+        u'<error', u'to="Kill"/>',
+        u'</action>',
+        u'<end', u'name="End"/>',
+        u'</workflow-app>'
+        ],
+        wf.to_xml({'output': '/path'}).split()
+    )
 
   def test_job_validate_xml_name(self):
     job = Workflow()
@@ -80,645 +100,92 @@ LIMIT $limit"""))
 
     job.update_name('aa')
     assert_equal('aa', job.validated_name)
-    
+
     job.update_name('%a')
     assert_equal('_a', job.validated_name)
-    
+
     job.update_name('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaz')
     assert_equal(len('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'), len(job.validated_name))
-    
+
     job.update_name('My <...> 1st W$rkflow [With] (Bad) letter$')
     assert_equal('My_______1st_W$rkflow__With___Bad__lette', job.validated_name)
 
+  def test_ignore_dead_fork_link(self):
+    data = {'id': 1, 'type': 'fork', 'children': [{'to': 1, 'id': 1}, {'to': 2, 'id': 2}], 'properties': {}, 'name': 'my-fork'} # to --> 2 does not exist
+    fork = Node(data)
 
-#  def test_workflow_name(self):
-#    try:
-#      workflow_dict = WORKFLOW_DICT.copy()
-#      workflow_count = Document.objects.available_docs(Workflow, self.user).count()
-#
-#      workflow_dict['name'][0] = 'bad workflow name'
-#      response = self.c.post(reverse('oozie:create_workflow'), workflow_dict, follow=True)
-#      assert_equal(200, response.status_code)
-#      assert_equal(workflow_count, Document.objects.available_docs(Workflow, self.user).count(), response)
-#
-#      workflow_dict['name'][0] = 'good-workflow-name'
-#      response = self.c.post(reverse('oozie:create_workflow'), workflow_dict, follow=True)
-#      assert_equal(200, response.status_code)
-#      assert_equal(workflow_count + 1, Document.objects.available_docs(Workflow, self.user).count(), response)
-#    finally:
-#      name = 'bad workflow name'
-#      if Workflow.objects.filter(name=name).exists():
-#        Node.objects.filter(workflow__name=name).delete()
-#        Workflow.objects.filter(name=name).delete()
-#      name = 'good-workflow-name'
-#      if Workflow.objects.filter(name=name).exists():
-#        Node.objects.filter(workflow__name=name).delete()
-#        Workflow.objects.filter(name=name).delete()
-#
-#
-#  def test_find_parameters(self):
-#    data = json.dumps({'sla': [
-#        {'key': 'enabled', 'value': True},
-#        {'key': 'nominal-time', 'value': '${time}'},]}
-#    )
-#    jobs = [Job(name="$a"),
-#            Job(name="foo ${b} $$"),
-#            Job(name="${foo}", description="xxx ${food}", data=data)]
-#
-#    result = [find_parameters(job, ['name', 'description', 'sla']) for job in jobs]
-#    assert_equal(set(["b", "foo", "food", "time"]), reduce(lambda x, y: x | set(y), result, set()))
-#
-#
-#  def test_find_all_parameters(self):
-#    self.wf.data = json.dumps({'sla': [
-#        {'key': 'enabled', 'value': False},
-#        {'key': 'nominal-time', 'value': '${time}'},]}
-#    )
-#    assert_equal([{'name': u'output', 'value': u''}, {'name': u'SLEEP', 'value': ''}, {'name': u'market', 'value': u'US'}],
-#                 self.wf.find_all_parameters())
-#
-#    self.wf.data = json.dumps({'sla': [
-#        {'key': 'enabled', 'value': True},
-#        {'key': 'nominal-time', 'value': '${time}'},]}
-#    )
-#    assert_equal([{'name': u'output', 'value': u''}, {'name': u'SLEEP', 'value': ''}, {'name': u'market', 'value': u'US'}, {'name': u'time', 'value': u''}],
-#                 self.wf.find_all_parameters())
-#
-#
-#  def test_workflow_has_cycle(self):
-#    action1 = Node.objects.get(workflow=self.wf, name='action-name-1')
-#    action3 = Node.objects.get(workflow=self.wf, name='action-name-3')
-#
-#    assert_false(self.wf.has_cycle())
-#
-#    ok = action3.get_link('ok')
-#    ok.child = action1
-#    ok.save()
-#
-#    assert_true(self.wf.has_cycle())
-#
-#
-#  def test_workflow_gen_xml(self):
-#    assert_equal(
-#        '<workflow-app name="wf-name-1" xmlns="uri:oozie:workflow:0.4">\n'
-#        '    <global>\n'
-#        '        <job-xml>jobconf.xml</job-xml>\n'
-#        '        <configuration>\n'
-#        '            <property>\n'
-#        '                <name>sleep-all</name>\n'
-#        '                <value>${SLEEP}</value>\n'
-#        '            </property>\n'
-#        '         </configuration>\n'
-#        '    </global>\n'
-#        '    <start to="action-name-1"/>\n'
-#        '    <action name="action-name-1">\n'
-#        '        <map-reduce>\n'
-#        '           <job-tracker>${jobTracker}</job-tracker>\n'
-#        '            <name-node>${nameNode}</name-node>\n'
-#        '            <prepare>\n'
-#        '                <delete path="${nameNode}${output}"/>\n'
-#        '                <mkdir path="${nameNode}/test"/>\n'
-#        '            </prepare>\n'
-#        '            <configuration>\n'
-#        '                <property>\n'
-#        '                    <name>sleep</name>\n'
-#        '                    <value>${SLEEP}</value>\n'
-#        '                </property>\n'
-#        '            </configuration>\n'
-#        '        </map-reduce>\n'
-#        '        <ok to="action-name-2"/>\n'
-#        '        <error to="kill"/>\n'
-#        '    </action>\n'
-#        '    <action name="action-name-2">\n'
-#        '        <map-reduce>\n'
-#        '            <job-tracker>${jobTracker}</job-tracker>\n'
-#        '            <name-node>${nameNode}</name-node>\n'
-#        '            <prepare>\n'
-#        '                <delete path="${nameNode}${output}"/>\n'
-#        '                <mkdir path="${nameNode}/test"/>\n'
-#        '            </prepare>\n'
-#        '            <configuration>\n'
-#        '                <property>\n'
-#        '                    <name>sleep</name>\n'
-#        '                    <value>${SLEEP}</value>\n'
-#        '                </property>\n'
-#        '            </configuration>\n'
-#        '        </map-reduce>\n'
-#        '        <ok to="action-name-3"/>\n'
-#        '        <error to="kill"/>\n'
-#        '    </action>\n'
-#        '    <action name="action-name-3">\n'
-#        '        <map-reduce>\n'
-#        '            <job-tracker>${jobTracker}</job-tracker>\n'
-#        '            <name-node>${nameNode}</name-node>\n'
-#        '            <prepare>\n'
-#        '                <delete path="${nameNode}${output}"/>\n'
-#        '                <mkdir path="${nameNode}/test"/>\n'
-#        '            </prepare>\n'
-#        '            <configuration>\n'
-#        '                <property>\n'
-#        '                    <name>sleep</name>\n'
-#        '                    <value>${SLEEP}</value>\n'
-#        '                </property>\n'
-#        '            </configuration>\n'
-#        '        </map-reduce>\n'
-#        '        <ok to="end"/>\n'
-#        '        <error to="kill"/>\n'
-#        '    </action>\n'
-#        '    <kill name="kill">\n'
-#        '        <message>Action failed, error message[${wf:errorMessage(wf:lastErrorNode())}]</message>\n'
-#        '    </kill>\n'
-#        '    <end name="end"/>\n'
-#        '</workflow-app>'.split(), self.wf.to_xml({'output': '/path'}).split())
-#
-#
-#  def test_workflow_java_gen_xml(self):
-#    self.wf.node_set.filter(name='action-name-1').delete()
-#
-#    action1 = add_node(self.wf, 'action-name-1', 'java', [self.wf.start], {
-#        u'name': 'MyTeragen',
-#        "description":"Generate N number of records",
-#        "main_class":"org.apache.hadoop.examples.terasort.TeraGen",
-#        "args":"1000 ${output_dir}/teragen",
-#        "files":'["my_file","my_file2"]',
-#        "job_xml":"",
-#        "java_opts":"-Dexample-property=natty",
-#        "jar_path":"/user/hue/oozie/workspaces/lib/hadoop-examples.jar",
-#        "prepares":'[{"value":"/test","type":"mkdir"}]',
-#        "archives":'[{"dummy":"","name":"my_archive"},{"dummy":"","name":"my_archive2"}]',
-#        "capture_output": "on",
-#    })
-#    Link(parent=action1, child=self.wf.end, name="ok").save()
-#
-#    xml = self.wf.to_xml({'output_dir': '/path'})
-#
-#    assert_true("""
-#    <action name="MyTeragen">
-#        <java>
-#            <job-tracker>${jobTracker}</job-tracker>
-#            <name-node>${nameNode}</name-node>
-#            <prepare>
-#                  <mkdir path="${nameNode}/test"/>
-#            </prepare>
-#            <main-class>org.apache.hadoop.examples.terasort.TeraGen</main-class>
-#            <java-opts>-Dexample-property=natty</java-opts>
-#            <arg>1000</arg>
-#            <arg>${output_dir}/teragen</arg>
-#            <file>my_file#my_file</file>
-#            <file>my_file2#my_file2</file>
-#            <archive>my_archive#my_archive</archive>
-#            <archive>my_archive2#my_archive2</archive>
-#            <capture-output/>
-#        </java>
-#        <ok to="end"/>
-#        <error to="kill"/>
-#    </action>""" in xml, xml)
-#
-#
-#  def test_workflow_streaming_gen_xml(self):
-#    self.wf.node_set.filter(name='action-name-1').delete()
-#
-#    action1 = add_node(self.wf, 'action-name-1', 'streaming', [self.wf.start], {
-#        u'name': 'MyStreaming',
-#        "description": "Generate N number of records",
-#        "main_class": "org.apache.hadoop.examples.terasort.TeraGen",
-#        "mapper": "MyMapper",
-#        "reducer": "MyReducer",
-#        "files": '["my_file"]',
-#        "archives":'[{"dummy":"","name":"my_archive"}]',
-#    })
-#    Link(parent=action1, child=self.wf.end, name="ok").save()
-#
-#    xml = self.wf.to_xml()
-#
-#    assert_true("""
-#    <action name="MyStreaming">
-#        <map-reduce>
-#            <job-tracker>${jobTracker}</job-tracker>
-#            <name-node>${nameNode}</name-node>
-#            <streaming>
-#                <mapper>MyMapper</mapper>
-#                <reducer>MyReducer</reducer>
-#            </streaming>
-#            <file>my_file#my_file</file>
-#            <archive>my_archive#my_archive</archive>
-#        </map-reduce>
-#        <ok to="end"/>
-#        <error to="kill"/>
-#    </action>""" in xml, xml)
-#
-#
-#  def test_workflow_shell_gen_xml(self):
-#    self.wf.node_set.filter(name='action-name-1').delete()
-#
-#    action1 = add_node(self.wf, 'action-name-1', 'shell', [self.wf.start], {
-#        u'job_xml': 'my-job.xml',
-#        u'files': '["hello.py"]',
-#        u'name': 'Shell',
-#        u'job_properties': '[]',
-#        u'capture_output': 'on',
-#        u'command': 'hello.py',
-#        u'archives': '[]',
-#        u'prepares': '[]',
-#        u'params': '[{"value":"World!","type":"argument"}]',
-#        u'description': 'Execute a Python script printing its arguments'
-#    })
-#    Link(parent=action1, child=self.wf.end, name="ok").save()
-#
-#    xml = self.wf.to_xml()
-#
-#    assert_true("""
-#        <shell xmlns="uri:oozie:shell-action:0.1">
-#            <job-tracker>${jobTracker}</job-tracker>
-#            <name-node>${nameNode}</name-node>
-#              <job-xml>my-job.xml</job-xml>
-#            <exec>hello.py</exec>
-#              <argument>World!</argument>
-#            <file>hello.py#hello.py</file>
-#              <capture-output/>
-#        </shell>""" in xml, xml)
-#
-#    action1.capture_output = False
-#    action1.save()
-#
-#    xml = self.wf.to_xml()
-#
-#    assert_true("""
-#        <shell xmlns="uri:oozie:shell-action:0.1">
-#            <job-tracker>${jobTracker}</job-tracker>
-#            <name-node>${nameNode}</name-node>
-#              <job-xml>my-job.xml</job-xml>
-#            <exec>hello.py</exec>
-#              <argument>World!</argument>
-#            <file>hello.py#hello.py</file>
-#        </shell>""" in xml, xml)
-#
-#
-#  def test_workflow_fs_gen_xml(self):
-#    self.wf.node_set.filter(name='action-name-1').delete()
-#
-#    action1 = add_node(self.wf, 'action-name-1', 'fs', [self.wf.start], {
-#        u'name': 'MyFs',
-#        u'description': 'Execute a Fs action that manage files',
-#        u'deletes': '[{"name":"/to/delete"},{"name":"to/delete2"}]',
-#        u'mkdirs': '[{"name":"/to/mkdir"},{"name":"${mkdir2}"}]',
-#        u'moves': '[{"source":"/to/move/source","destination":"/to/move/destination"},{"source":"/to/move/source2","destination":"/to/move/destination2"}]',
-#        u'chmods': '[{"path":"/to/chmod","recursive":true,"permissions":"-rwxrw-rw-"},{"path":"/to/chmod2","recursive":false,"permissions":"755"}]',
-#        u'touchzs': '[{"name":"/to/touchz"},{"name":"/to/touchz2"}]'
-#    })
-#    Link(parent=action1, child=self.wf.end, name="ok").save()
-#
-#    xml = self.wf.to_xml({'mkdir2': '/path'})
-#
-#    assert_true("""
-#    <action name="MyFs">
-#        <fs>
-#              <delete path='${nameNode}/to/delete'/>
-#              <delete path='${nameNode}/user/${wf:user()}/to/delete2'/>
-#              <mkdir path='${nameNode}/to/mkdir'/>
-#              <mkdir path='${nameNode}${mkdir2}'/>
-#              <move source='${nameNode}/to/move/source' target='${nameNode}/to/move/destination'/>
-#              <move source='${nameNode}/to/move/source2' target='${nameNode}/to/move/destination2'/>
-#              <chmod path='${nameNode}/to/chmod' permissions='-rwxrw-rw-' dir-files='true'/>
-#              <chmod path='${nameNode}/to/chmod2' permissions='755' dir-files='false'/>
-#              <touchz path='${nameNode}/to/touchz'/>
-#              <touchz path='${nameNode}/to/touchz2'/>
-#        </fs>
-#        <ok to="end"/>
-#        <error to="kill"/>
-#    </action>""" in xml, xml)
-#
-#
-#  def test_workflow_email_gen_xml(self):
-#    self.wf.node_set.filter(name='action-name-1').delete()
-#
-#    action1 = add_node(self.wf, 'action-name-1', 'email', [self.wf.start], {
-#        u'name': 'MyEmail',
-#        u'description': 'Execute an Email action',
-#        u'to': 'hue@hue.org,django@python.org',
-#        u'cc': '',
-#        u'subject': 'My subject',
-#        u'body': 'My body'
-#    })
-#    Link(parent=action1, child=self.wf.end, name="ok").save()
-#
-#    xml = self.wf.to_xml()
-#
-#    assert_true("""
-#    <action name="MyEmail">
-#        <email xmlns="uri:oozie:email-action:0.1">
-#            <to>hue@hue.org,django@python.org</to>
-#            <subject>My subject</subject>
-#            <body>My body</body>
-#        </email>
-#        <ok to="end"/>
-#        <error to="kill"/>
-#    </action>""" in xml, xml)
-#
-#    action1.cc = 'lambda@python.org'
-#    action1.save()
-#
-#    xml = self.wf.to_xml()
-#
-#    assert_true("""
-#    <action name="MyEmail">
-#        <email xmlns="uri:oozie:email-action:0.1">
-#            <to>hue@hue.org,django@python.org</to>
-#              <cc>lambda@python.org</cc>
-#            <subject>My subject</subject>
-#            <body>My body</body>
-#        </email>
-#        <ok to="end"/>
-#        <error to="kill"/>
-#    </action>""" in xml, xml)
-#
-#
-#  def test_workflow_subworkflow_gen_xml(self):
-#    self.wf.node_set.filter(name='action-name-1').delete()
-#
-#    wf_dict = WORKFLOW_DICT.copy()
-#    wf_dict['name'] = [u'wf-name-2']
-#    wf2 = create_workflow(self.c, self.user, wf_dict)
-#
-#    action1 = add_node(self.wf, 'action-name-1', 'subworkflow', [self.wf.start], {
-#        u'name': 'MySubworkflow',
-#        u'description': 'Execute a subworkflow action',
-#        u'sub_workflow': wf2,
-#        u'propagate_configuration': True,
-#        u'job_properties': '[{"value":"World!","name":"argument"}]'
-#    })
-#    Link(parent=action1, child=self.wf.end, name="ok").save()
-#
-#    xml = self.wf.to_xml()
-#
-#    assert_true(re.search(
-#        '<sub-workflow>\W+'
-#            '<app-path>\${nameNode}/user/hue/oozie/workspaces/_test_-oozie-(.+?)</app-path>\W+'
-#            '<propagate-configuration/>\W+'
-#                '<configuration>\W+'
-#                '<property>\W+'
-#                    '<name>argument</name>\W+'
-#                    '<value>World!</value>\W+'
-#                '</property>\W+'
-#            '</configuration>\W+'
-#        '</sub-workflow>', xml, re.MULTILINE), xml)
-#
-#    wf2.delete(skip_trash=True)
-#
-#  def test_workflow_flatten_list(self):
-#    assert_equal('[<Start: start>, <Mapreduce: action-name-1>, <Mapreduce: action-name-2>, <Mapreduce: action-name-3>, '
-#                 '<Kill: kill>, <End: end>]',
-#                 str(self.wf.node_list))
-#
-#    # 1 2
-#    #  3
-#    self.setup_forking_workflow()
-#
-#    assert_equal('[<Start: start>, <Fork: fork-name-1>, <Mapreduce: action-name-1>, <Mapreduce: action-name-2>, '
-#                 '<Join: join-name-1>, <Mapreduce: action-name-3>, <Kill: kill>, <End: end>]',
-#                 str(self.wf.node_list))
-#
-#
-#  def test_workflow_generic_gen_xml(self):
-#    self.wf.node_set.filter(name='action-name-1').delete()
-#
-#    action1 = add_node(self.wf, 'action-name-1', 'generic', [self.wf.start], {
-#        u'name': 'Generic',
-#        u'description': 'Execute a Generic email action',
-#        u'xml': """
-#        <email xmlns="uri:oozie:email-action:0.1">
-#            <to>hue@hue.org,django@python.org</to>
-#            <subject>My subject</subject>
-#            <body>My body</body>
-#        </email>""",
-#    })
-#    Link(parent=action1, child=self.wf.end, name="ok").save()
-#
-#    xml = self.wf.to_xml()
-#
-#    assert_true("""
-#    <action name="Generic">
-#        <email xmlns="uri:oozie:email-action:0.1">
-#            <to>hue@hue.org,django@python.org</to>
-#            <subject>My subject</subject>
-#            <body>My body</body>
-#        </email>
-#        <ok to="end"/>
-#        <error to="kill"/>
-#    </action>""" in xml, xml)
-#
-#
-#  def test_workflow_hive_gen_xml(self):
-#    self.wf.node_set.filter(name='action-name-1').delete()
-#
-#    action1 = add_node(self.wf, 'action-name-1', 'hive', [self.wf.start], {
-#        u'job_xml': 'my-job.xml',
-#        u'files': '["hello.py"]',
-#        u'name': 'MyHive',
-#        u'job_properties': '[]',
-#        u'script_path': 'hello.sql',
-#        u'archives': '[]',
-#        u'prepares': '[]',
-#        u'params': '[{"value":"World!","type":"argument"}]',
-#        u'description': ''
-#    })
-#    Link(parent=action1, child=self.wf.end, name="ok").save()
-#
-#    xml = self.wf.to_xml()
-#
-#    assert_true("""
-#<workflow-app name="wf-name-1" xmlns="uri:oozie:workflow:0.4">
-#  <global>
-#      <job-xml>jobconf.xml</job-xml>
-#            <configuration>
-#                <property>
-#                    <name>sleep-all</name>
-#                    <value>${SLEEP}</value>
-#                </property>
-#            </configuration>
-#  </global>
-#    <start to="MyHive"/>
-#    <action name="MyHive">
-#        <hive xmlns="uri:oozie:hive-action:0.2">
-#            <job-tracker>${jobTracker}</job-tracker>
-#            <name-node>${nameNode}</name-node>
-#              <job-xml>my-job.xml</job-xml>
-#            <script>hello.sql</script>
-#              <argument>World!</argument>
-#            <file>hello.py#hello.py</file>
-#        </hive>
-#        <ok to="end"/>
-#        <error to="kill"/>
-#    </action>
-#    <kill name="kill">
-#        <message>Action failed, error message[${wf:errorMessage(wf:lastErrorNode())}]</message>
-#    </kill>
-#    <end name="end"/>
-#</workflow-app>""" in xml, xml)
-#
-#    import beeswax
-#    from beeswax.tests import hive_site_xml
-#
-#    tmpdir = tempfile.mkdtemp()
-#    saved = None
-#    try:
-#      # We just replace the Beeswax conf variable
-#      class Getter(object):
-#        def get(self):
-#          return tmpdir
-#
-#      xml = hive_site_xml(is_local=False, use_sasl=True, kerberos_principal='hive/_HOST@test.com')
-#      file(os.path.join(tmpdir, 'hive-site.xml'), 'w').write(xml)
-#
-#      beeswax.hive_site.reset()
-#      saved = beeswax.conf.HIVE_CONF_DIR
-#      beeswax.conf.HIVE_CONF_DIR = Getter()
-#
-#      action1 = Node.objects.get(workflow=self.wf, name='MyHive')
-#      action1.credentials = [{'name': 'hcat', 'value': True}, {'name': 'hbase', 'value': False}, {'name': 'hive2', 'value': True}]
-#      action1.save()
-#
-#      xml = self.wf.to_xml(mapping={
-#          'credentials': {
-#              'hcat': {
-#                  'xml_name': 'hcat',
-#                  'properties': [
-#                      ('hcat.metastore.uri', 'thrift://hue-koh-chang:9999'),
-#                      ('hcat.metastore.principal', 'hive')
-#                  ]
-#              },
-#              'hive2': {
-#                  'xml_name': 'hive2',
-#                  'properties': [
-#                      ('hive2.jdbc.url', 'jdbc:hive2://hue-koh-chang:8888'),
-#                      ('hive2.server.principal', 'hive')
-#                  ]
-#              }
-#          }
-#        }
-#      )
-#
-#      assert_true("""
-#<workflow-app name="wf-name-1" xmlns="uri:oozie:workflow:0.4">
-#  <global>
-#      <job-xml>jobconf.xml</job-xml>
-#            <configuration>
-#                <property>
-#                    <name>sleep-all</name>
-#                    <value>${SLEEP}</value>
-#                </property>
-#            </configuration>
-#  </global>
-#  <credentials>
-#    <credential name="hcat" type="hcat">
-#      <property>
-#        <name>hcat.metastore.uri</name>
-#        <value>thrift://hue-koh-chang:9999</value>
-#      </property>
-#      <property>
-#        <name>hcat.metastore.principal</name>
-#        <value>hive</value>
-#      </property>
-#    </credential>
-#    <credential name="hive2" type="hive2">
-#      <property>
-#        <name>hive2.jdbc.url</name>
-#        <value>jdbc:hive2://hue-koh-chang:8888</value>
-#      </property>
-#      <property>
-#        <name>hive2.server.principal</name>
-#        <value>hive</value>
-#      </property>
-#    </credential>
-#  </credentials>
-#    <start to="MyHive"/>
-#    <action name="MyHive" cred="hcat,hive2">
-#        <hive xmlns="uri:oozie:hive-action:0.2">
-#            <job-tracker>${jobTracker}</job-tracker>
-#            <name-node>${nameNode}</name-node>
-#              <job-xml>my-job.xml</job-xml>
-#            <script>hello.sql</script>
-#              <argument>World!</argument>
-#            <file>hello.py#hello.py</file>
-#        </hive>
-#        <ok to="end"/>
-#        <error to="kill"/>
-#    </action>
-#    <kill name="kill">
-#        <message>Action failed, error message[${wf:errorMessage(wf:lastErrorNode())}]</message>
-#    </kill>
-#    <end name="end"/>
-#</workflow-app>""" in xml, xml)
-#
-#    finally:
-#      beeswax.hive_site.reset()
-#      if saved is not None:
-#        beeswax.conf.HIVE_CONF_DIR = saved
-#      shutil.rmtree(tmpdir)
-#
-#    self.wf.node_set.filter(name='action-name-1').delete()
-#
-#
-#  def test_workflow_gen_workflow_sla(self):
-#    xml = self.wf.to_xml({'output': '/path'})
-#    assert_false('<sla' in xml, xml)
-#    assert_false('xmlns="uri:oozie:workflow:0.5"' in xml, xml)
-#    assert_false('xmlns:sla="uri:oozie:sla:0.2"' in xml, xml)
-#
-#    sla = self.wf.sla
-#    sla[0]['value'] = True
-#    sla[1]['value'] = 'now' # nominal-time
-#    sla[3]['value'] = '${ 10 * MINUTES}' # should-end
-#    self.wf.sla = sla
-#    self.wf.save()
-#
-#    xml = self.wf.to_xml({'output': '/path'})
-#    assert_true('xmlns="uri:oozie:workflow:0.5"' in xml, xml)
-#    assert_true('xmlns:sla="uri:oozie:sla:0.2"' in xml, xml)
-#    assert_true("""<end name="end"/>
-#          <sla:info>
-#            <sla:nominal-time>now</sla:nominal-time>
-#            <sla:should-end>${ 10 * MINUTES}</sla:should-end>
-#          </sla:info>
-#</workflow-app>""" in xml, xml)
-#
-#
-#  def test_workflow_gen_action_sla(self):
-#    xml = self.wf.to_xml({'output': '/path'})
-#    assert_false('<sla' in xml, xml)
-#    assert_false('xmlns="uri:oozie:workflow:0.5"' in xml, xml)
-#    assert_false('xmlns:sla="uri:oozie:sla:0.2"' in xml, xml)
-#
-#    self.wf.node_set.filter(name='action-name-1').delete()
-#
-#    action1 = add_node(self.wf, 'action-name-1', 'hive', [self.wf.start], {
-#        u'job_xml': 'my-job.xml',
-#        u'files': '["hello.py"]',
-#        u'name': 'MyHive',
-#        u'job_properties': '[]',
-#        u'script_path': 'hello.sql',
-#        u'archives': '[]',
-#        u'prepares': '[]',
-#        u'params': '[{"value":"World!","type":"argument"}]',
-#        u'description': ''
-#    })
-#    Link(parent=action1, child=self.wf.end, name="ok").save()
-#
-#    xml = self.wf.to_xml()
-#
-#    sla = action1.sla
-#    sla[0]['value'] = True
-#    sla[1]['value'] = 'now' # nominal-time
-#    sla[3]['value'] = '${ 10 * MINUTES}' # should-end
-#    action1.sla = sla
-#    action1.save()
-#
-#    xml = self.wf.to_xml({'output': '/path'})
-#    assert_true('xmlns="uri:oozie:workflow:0.5"' in xml, xml)
-#    assert_true('xmlns:sla="uri:oozie:sla:0.2"' in xml, xml)
-#    assert_true("""<error to="kill"/>
-#          <sla:info>
-#            <sla:nominal-time>now</sla:nominal-time>
-#            <sla:should-end>${ 10 * MINUTES}</sla:should-end>
-#          </sla:info>
-#    </action>""" in xml, xml)
+    node_mapping = {1: fork} # Point to ourself
+
+    assert_equal(['<fork', 'name="my-fork">', '<path', 'start="my-fork"', '/>', '</fork>'], fork.to_xml(node_mapping=node_mapping).split())
+
+  def test_action_gen_xml_prepare(self):
+    # Prepare has a value
+    data = {
+        u'properties': {
+            u'files': [], u'job_xml': [], u'parameters': [], u'retry_interval': [], u'retry_max': [], u'job_properties': [], u'arguments': [],
+            u'prepares': [{u'type': u'mkdir', u'value': u'/my_dir'}],
+            u'credentials': [], u'script_path': u'my_pig.pig',
+            u'sla': [{u'key': u'enabled', u'value': False}, {u'key': u'nominal-time', u'value': u'${nominal_time}'}, {u'key': u'should-start', u'value': u''}, {u'key': u'should-end', u'value': u'${30 * MINUTES}'}, {u'key': u'max-duration', u'value': u''}, {u'key': u'alert-events', u'value': u''}, {u'key': u'alert-contact', u'value': u''}, {u'key': u'notification-msg', u'value': u''}, {u'key': u'upstream-apps', u'value': u''}],
+            u'archives': []
+        },
+        u'type': u'pig-widget',
+        u'id': u'c59d1947-7ce0-ef34-22b2-d64b9fc5bf9a',
+        u'name': u'pig-c59d',
+        "children":[{"to": "c59d1947-7ce0-ef34-22b2-d64b9fc5bf9a"}, {"error": "c59d1947-7ce0-ef34-22b2-d64b9fc5bf9a"}]
+    }
+
+    pig_node = Node(data)
+    node_mapping = {"c59d1947-7ce0-ef34-22b2-d64b9fc5bf9a": pig_node}
+
+    xml = pig_node.to_xml(node_mapping=node_mapping)
+    xml = [row.strip() for row in xml.split()]
+
+    assert_true(u'<prepare>' in xml, xml)
+    assert_true(u'<mkdir' in xml, xml)
+    assert_true(u'path="${nameNode}/my_dir"/>' in xml, xml)
+
+    # Prepare has empty value and is skipped
+    pig_node.data['properties']['prepares'] = [{u'type': u'mkdir', u'value': u''}]
+
+    xml = pig_node.to_xml(node_mapping=node_mapping)
+    xml = [row.strip() for row in xml.split()]
+
+    assert_false(u'<prepare>' in xml, xml)
+    assert_false(u'<mkdir' in xml, xml)
+
+    # Prepare has a value and an empty value
+    pig_node.data['properties']['prepares'] = [{u'type': u'mkdir', u'value': u'/my_dir'}, {u'type': u'rm', u'value': u''}]
+
+    xml = pig_node.to_xml(node_mapping=node_mapping)
+    xml = [row.strip() for row in xml.split()]
+
+    assert_true(u'<prepare>' in xml, xml)
+    assert_true(u'<mkdir' in xml, xml)
+    assert_true(u'path="${nameNode}/my_dir"/>' in xml, xml)
+
+    assert_false(u'<rm' in xml, xml)
+
+  def test_upgrade_nodes_in_workflow(self):
+
+    wf = Workflow(data="{\"layout\": [{\"oozieRows\": [{\"enableOozieDropOnBefore\": true, \"enableOozieDropOnSide\": true, \"enableOozieDrop\": false, \"widgets\": [{\"status\": \"\", \"logsURL\": \"\", \"name\": \"Sqoop 1\", \"widgetType\": \"sqoop-widget\", \"oozieMovable\": true, \"ooziePropertiesExpanded\": false, \"properties\": {}, \"isLoading\": true, \"offset\": 0, \"actionURL\": \"\", \"progress\": 0, \"klass\": \"card card-widget span12\", \"oozieExpanded\": false, \"id\": \"79774a62-94e3-2ddb-554f-b83640fa5b03\", \"size\": 12}], \"id\": \"0f54ae72-7122-ad7c-fb31-aa715e15a707\", \"columns\": []}], \"rows\": [{\"enableOozieDropOnBefore\": true, \"enableOozieDropOnSide\": true, \"enableOozieDrop\": false, \"widgets\": [{\"status\": \"\", \"logsURL\": \"\", \"name\": \"Start\", \"widgetType\": \"start-widget\", \"oozieMovable\": false, \"ooziePropertiesExpanded\": false, \"properties\": {}, \"isLoading\": true, \"offset\": 0, \"actionURL\": \"\", \"progress\": 0, \"klass\": \"card card-widget span12\", \"oozieExpanded\": false, \"id\": \"3f107997-04cc-8733-60a9-a4bb62cebffc\", \"size\": 12}], \"id\": \"371cf19e-0c45-1e40-2887-5de4033c2a01\", \"columns\": []}, {\"enableOozieDropOnBefore\": true, \"enableOozieDropOnSide\": true, \"enableOozieDrop\": false, \"widgets\": [{\"status\": \"\", \"logsURL\": \"\", \"name\": \"Sqoop 1\", \"widgetType\": \"sqoop-widget\", \"oozieMovable\": true, \"ooziePropertiesExpanded\": false, \"properties\": {}, \"isLoading\": true, \"offset\": 0, \"actionURL\": \"\", \"progress\": 0, \"klass\": \"card card-widget span12\", \"oozieExpanded\": false, \"id\": \"79774a62-94e3-2ddb-554f-b83640fa5b03\", \"size\": 12}], \"id\": \"0f54ae72-7122-ad7c-fb31-aa715e15a707\", \"columns\": []}, {\"enableOozieDropOnBefore\": true, \"enableOozieDropOnSide\": true, \"enableOozieDrop\": false, \"widgets\": [{\"status\": \"\", \"logsURL\": \"\", \"name\": \"End\", \"widgetType\": \"end-widget\", \"oozieMovable\": false, \"ooziePropertiesExpanded\": false, \"properties\": {}, \"isLoading\": true, \"offset\": 0, \"actionURL\": \"\", \"progress\": 0, \"klass\": \"card card-widget span12\", \"oozieExpanded\": false, \"id\": \"33430f0f-ebfa-c3ec-f237-3e77efa03d0a\", \"size\": 12}], \"id\": \"40cfacb5-0622-4305-1473-8f70e287668b\", \"columns\": []}, {\"enableOozieDropOnBefore\": true, \"enableOozieDropOnSide\": true, \"enableOozieDrop\": false, \"widgets\": [{\"status\": \"\", \"logsURL\": \"\", \"name\": \"Kill\", \"widgetType\": \"kill-widget\", \"oozieMovable\": true, \"ooziePropertiesExpanded\": false, \"properties\": {}, \"isLoading\": true, \"offset\": 0, \"actionURL\": \"\", \"progress\": 0, \"klass\": \"card card-widget span12\", \"oozieExpanded\": false, \"id\": \"17c9c895-5a16-7443-bb81-f34b30b21548\", \"size\": 12}], \"id\": \"373c9cc8-c64a-f1ef-5486-f18ec52620e3\", \"columns\": []}], \"oozieEndRow\": {\"enableOozieDropOnBefore\": true, \"enableOozieDropOnSide\": true, \"enableOozieDrop\": false, \"widgets\": [{\"status\": \"\", \"logsURL\": \"\", \"name\": \"End\", \"widgetType\": \"end-widget\", \"oozieMovable\": false, \"ooziePropertiesExpanded\": false, \"properties\": {}, \"isLoading\": true, \"offset\": 0, \"actionURL\": \"\", \"progress\": 0, \"klass\": \"card card-widget span12\", \"oozieExpanded\": false, \"id\": \"33430f0f-ebfa-c3ec-f237-3e77efa03d0a\", \"size\": 12}], \"id\": \"40cfacb5-0622-4305-1473-8f70e287668b\", \"columns\": []}, \"oozieKillRow\": {\"enableOozieDropOnBefore\": true, \"enableOozieDropOnSide\": true, \"enableOozieDrop\": false, \"widgets\": [{\"status\": \"\", \"logsURL\": \"\", \"name\": \"Kill\", \"widgetType\": \"kill-widget\", \"oozieMovable\": true, \"ooziePropertiesExpanded\": false, \"properties\": {}, \"isLoading\": true, \"offset\": 0, \"actionURL\": \"\", \"progress\": 0, \"klass\": \"card card-widget span12\", \"oozieExpanded\": false, \"id\": \"17c9c895-5a16-7443-bb81-f34b30b21548\", \"size\": 12}], \"id\": \"373c9cc8-c64a-f1ef-5486-f18ec52620e3\", \"columns\": []}, \"enableOozieDropOnAfter\": true, \"oozieStartRow\": {\"enableOozieDropOnBefore\": true, \"enableOozieDropOnSide\": true, \"enableOozieDrop\": false, \"widgets\": [{\"status\": \"\", \"logsURL\": \"\", \"name\": \"Start\", \"widgetType\": \"start-widget\", \"oozieMovable\": false, \"ooziePropertiesExpanded\": false, \"properties\": {}, \"isLoading\": true, \"offset\": 0, \"actionURL\": \"\", \"progress\": 0, \"klass\": \"card card-widget span12\", \"oozieExpanded\": false, \"id\": \"3f107997-04cc-8733-60a9-a4bb62cebffc\", \"size\": 12}], \"id\": \"371cf19e-0c45-1e40-2887-5de4033c2a01\", \"columns\": []}, \"klass\": \"card card-home card-column span12\", \"enableOozieDropOnBefore\": true, \"drops\": [\"temp\"], \"id\": \"a8549012-ec27-4686-d71a-c6ff95785ff9\", \"size\": 12}], \"workflow\": {\"properties\": {\"job_xml\": \"\", \"description\": \"\", \"wf1_id\": null, \"sla_enabled\": false, \"deployment_dir\": \"/user/hue/oozie/workspaces/hue-oozie-1438808722.99\", \"schema_version\": \"uri:oozie:workflow:0.5\", \"properties\": [], \"show_arrows\": true, \"parameters\": [{\"name\": \"oozie.use.system.libpath\", \"value\": true}], \"sla\": [{\"value\": false, \"key\": \"enabled\"}, {\"value\": \"${nominal_time}\", \"key\": \"nominal-time\"}, {\"value\": \"\", \"key\": \"should-start\"}, {\"value\": \"${30 * MINUTES}\", \"key\": \"should-end\"}, {\"value\": \"\", \"key\": \"max-duration\"}, {\"value\": \"\", \"key\": \"alert-events\"}, {\"value\": \"\", \"key\": \"alert-contact\"}, {\"value\": \"\", \"key\": \"notification-msg\"}, {\"value\": \"\", \"key\": \"upstream-apps\"}]}, \"name\": \"My Workflow\", \"versions\": [\"uri:oozie:workflow:0.4\", \"uri:oozie:workflow:0.4.5\", \"uri:oozie:workflow:0.5\"], \"isDirty\": true, \"movedNode\": null, \"linkMapping\": {\"33430f0f-ebfa-c3ec-f237-3e77efa03d0a\": [], \"3f107997-04cc-8733-60a9-a4bb62cebffc\": [\"79774a62-94e3-2ddb-554f-b83640fa5b03\"], \"79774a62-94e3-2ddb-554f-b83640fa5b03\": [\"33430f0f-ebfa-c3ec-f237-3e77efa03d0a\"], \"17c9c895-5a16-7443-bb81-f34b30b21548\": []}, \"nodeIds\": [\"3f107997-04cc-8733-60a9-a4bb62cebffc\", \"33430f0f-ebfa-c3ec-f237-3e77efa03d0a\", \"17c9c895-5a16-7443-bb81-f34b30b21548\", \"79774a62-94e3-2ddb-554f-b83640fa5b03\"], \"nodes\": [{\"properties\": {}, \"name\": \"Start\", \"children\": [{\"to\": \"79774a62-94e3-2ddb-554f-b83640fa5b03\"}], \"actionParametersFetched\": false, \"type\": \"start-widget\", \"id\": \"3f107997-04cc-8733-60a9-a4bb62cebffc\", \"actionParameters\": []}, {\"properties\": {}, \"name\": \"End\", \"children\": [], \"actionParametersFetched\": false, \"type\": \"end-widget\", \"id\": \"33430f0f-ebfa-c3ec-f237-3e77efa03d0a\", \"actionParameters\": []}, {\"properties\": {\"message\": \"Action failed, error message[${wf:errorMessage(wf:lastErrorNode())}]\"}, \"name\": \"Kill\", \"children\": [], \"actionParametersFetched\": false, \"type\": \"kill-widget\", \"id\": \"17c9c895-5a16-7443-bb81-f34b30b21548\", \"actionParameters\": []}, {\"name\": \"sqoop-7977\", \"actionParametersUI\": [], \"children\": [{\"to\": \"33430f0f-ebfa-c3ec-f237-3e77efa03d0a\"}, {\"error\": \"17c9c895-5a16-7443-bb81-f34b30b21548\"}], \"properties\": {\"files\": [], \"job_xml\": \"\", \"parameters\": [], \"job_properties\": [], \"command\": \"import  --connect jdbc:hsqldb:file:db.hsqldb --table TT --target-dir hdfs://localhost:8020/user/foo -m 1\", \"archives\": [], \"prepares\": [], \"credentials\": [], \"sla\": [{\"value\": false, \"key\": \"enabled\"}, {\"value\": \"${nominal_time}\", \"key\": \"nominal-time\"}, {\"value\": \"\", \"key\": \"should-start\"}, {\"value\": \"${30 * MINUTES}\", \"key\": \"should-end\"}, {\"value\": \"\", \"key\": \"max-duration\"}, {\"value\": \"\", \"key\": \"alert-events\"}, {\"value\": \"\", \"key\": \"alert-contact\"}, {\"value\": \"\", \"key\": \"notification-msg\"}, {\"value\": \"\", \"key\": \"upstream-apps\"}]}, \"actionParametersFetched\": true, \"type\": \"sqoop-widget\", \"id\": \"79774a62-94e3-2ddb-554f-b83640fa5b03\", \"actionParameters\": []}], \"id\": null, \"nodeNamesMapping\": {\"33430f0f-ebfa-c3ec-f237-3e77efa03d0a\": \"End\", \"3f107997-04cc-8733-60a9-a4bb62cebffc\": \"Start\", \"79774a62-94e3-2ddb-554f-b83640fa5b03\": \"sqoop-7977\", \"17c9c895-5a16-7443-bb81-f34b30b21548\": \"Kill\"}, \"uuid\": \"b5511e29-c9cc-7f40-0d3a-6dd768f3b1e9\"}}")
+
+    assert_true('parameters' in json.loads(wf.data)['workflow']['nodes'][3]['properties'], wf.data)
+    assert_false('arguments' in json.loads(wf.data)['workflow']['nodes'][3]['properties'], wf.data) # Does not exist yet
+
+    data = wf.get_data()
+
+    assert_true('parameters' in data['workflow']['nodes'][3]['properties'], wf.data)
+    assert_true('arguments' in data['workflow']['nodes'][3]['properties'], wf.data) # New field transparently added
+
+  def test_action_gen_xml_java_opts(self):
+    # Contains java_opts
+    data = {u'name': u'java-fc05', u'properties': {u'files': [], u'job_xml': [], u'jar_path': u'/user/romain/hadoop-mapreduce-examples.jar', u'java_opts': [{u'value': u'-debug -Da -Db=1'}], u'retry_max': [], u'retry_interval': [], u'job_properties': [], u'capture_output': False, u'main_class': u'MyClass', u'arguments': [], u'prepares': [], u'credentials': [], u'sla': [{u'value': False, u'key': u'enabled'}, {u'value': u'${nominal_time}', u'key': u'nominal-time'}, {u'value': u'', u'key': u'should-start'}, {u'value': u'${30 * MINUTES}', u'key': u'should-end'}, {u'value': u'', u'key': u'max-duration'}, {u'value': u'', u'key': u'alert-events'}, {u'value': u'', u'key': u'alert-contact'}, {u'value': u'', u'key': u'notification-msg'}, {u'value': u'', u'key': u'upstream-apps'}], u'archives': []}, u'actionParametersFetched': False, u'id': u'fc05d86f-9f07-7a8d-6256-e6abfa87cf77', u'type': u'java-widget', u'children': [{u'to': u'33430f0f-ebfa-c3ec-f237-3e77efa03d0a'}, {u'error': u'17c9c895-5a16-7443-bb81-f34b30b21548'}], u'actionParameters': []}
+
+    java_node = Node(data)
+    node_mapping = {"fc05d86f-9f07-7a8d-6256-e6abfa87cf77": java_node, "33430f0f-ebfa-c3ec-f237-3e77efa03d0a": java_node, "17c9c895-5a16-7443-bb81-f34b30b21548": java_node} # Last 2 are actually kill and ok nodes
+
+    xml = java_node.to_xml(node_mapping=node_mapping)
+    xml = [row.strip() for row in xml.split('\n')]
+
+    assert_false("<java-opts>[{u&#39;value&#39;: u&#39;-debug -Da -Db=1&#39;}]</java-opts>" in xml, xml)
+    assert_true("<java-opts>-debug -Da -Db=1</java-opts>" in xml, xml)

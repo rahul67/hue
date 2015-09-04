@@ -45,8 +45,8 @@ def app(request):
   try:
     autocomplete_base_url = reverse('beeswax:api_autocomplete_databases', kwargs={})
   except:
-    pass
-  
+    LOG.exception('failed to find autocomplete base url')
+
   return render('app.mako', request, {
     'autocomplete_base_url': autocomplete_base_url,
   })
@@ -148,7 +148,12 @@ def copy(request):
     raise PopupException(_('POST request required.'))
 
   pig_script = PigScript.objects.get(id=request.POST.get('id'))
-  pig_script.doc.get().can_edit_or_exception(request.user)
+  doc = pig_script.doc.get()
+
+  try:
+    doc.can_read_or_exception(request.user)
+  except Exception, e:
+    raise PopupException(e)
 
   existing_script_data = pig_script.dict
 
@@ -169,8 +174,7 @@ def copy(request):
   })
   script_copy.save()
 
-  copy_doc = pig_script.doc.get().copy(name=name, owner=owner)
-  script_copy.doc.add(copy_doc)
+  copy_doc = doc.copy(content_object=script_copy, name=name, owner=owner)
 
   response = {
     'id': script_copy.id,
@@ -198,6 +202,7 @@ def delete(request):
       pig_script.doc.all().delete()
       pig_script.delete()
     except:
+      LOG.exception('failed to delete pig script')
       None
 
   response = {

@@ -16,6 +16,7 @@
 # limitations under the License.
 
 import json
+import logging
 import os
 import sys
 
@@ -23,6 +24,9 @@ from django.utils.translation import ugettext_lazy as _t, ugettext as _
 
 from desktop.lib.conf import Config, coerce_bool
 from spark.settings import NICE_NAME
+
+
+LOG = logging.getLogger(__name__)
 
 
 def coerce_json(j):
@@ -34,10 +38,13 @@ LANGUAGES = Config(
   help=_t("List of available types of snippets."),
   type=coerce_json,
   default="""[
-      {"name": "Scala", "type": "scala"},
-      {"name": "Python", "type": "python"},
-      {"name": "Impala SQL", "type": "impala"},
-      {"name": "Hive SQL", "type": "hive"},
+      {"name": "Scala", "type": "spark"},
+      {"name": "PySpark", "type": "pyspark"},
+      {"name": "R", "type": "r"},
+      {"name": "Impala", "type": "impala"},
+      {"name": "Hive", "type": "hive"},
+      {"name": "Jar", "type": "jar"},
+      {"name": "Python", "type": "py"},
       {"name": "Text", "type": "text"}
   ]"""
 )
@@ -51,7 +58,7 @@ LIVY_ASSEMBLY_JAR = Config(
 LIVY_SERVER_HOST = Config(
   key="livy_server_host",
   help=_t("Host address of the Livy Server."),
-  default="0.0.0.0")
+  default="localhost")
 
 LIVY_SERVER_PORT = Config(
   key="livy_server_port",
@@ -67,6 +74,12 @@ LIVY_YARN_JAR = Config(
   key="livy_yarn_jar",
   help=_t("Path to livy-assembly.jar inside HDFS"),
   private=True)
+
+LIVY_IMPERSONATION_ENABLED = Config(
+  key="livy_impersonation_enabled",
+  help=_t("Use impersonation when submitting livy jobs"),
+  default=True,
+  type=coerce_bool)
 
 START_LIVY_SERVER = Config(
   key="start_livy_server",
@@ -87,7 +100,7 @@ def get_spark_status(user):
       get_api(user).get_status()
       status = 'OK'
   except:
-    pass
+    LOG.exception('failed to get spark status')
 
   return status
 

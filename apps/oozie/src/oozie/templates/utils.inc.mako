@@ -23,6 +23,7 @@
 
 
 <%!
+  import logging
   import posixpath
   import time
 
@@ -32,6 +33,8 @@
   from desktop.lib.view_util import format_duration_in_millis
   from hadoop.fs.hadoopfs import Hdfs
   from liboozie.utils import format_time
+
+  LOG = logging.getLogger(__name__)
 %>
 
 
@@ -71,6 +74,7 @@
     try:
       return format_time(python_date)
     except:
+      LOG.exception('failed to format time: %s' % python_date)
       return '%s %s' % (date(python_date), dtime(python_date).replace("p.m.","PM").replace("a.m.","AM"))
   %>
 </%def>
@@ -90,9 +94,9 @@
     <% path = Hdfs.urlsplit(url)[2] %>
     % if path:
       % if path.startswith(posixpath.sep):
-        <a href="/filebrowser/view${path}">${ url }</a>
+        <a href="/filebrowser/view=${path}">${ url }</a>
       % else:
-        <a href="/filebrowser/home_relative_view/${path}">${ url }</a>
+        <a href="/filebrowser/home_relative_view=/${path}">${ url }</a>
       % endif
     % else:
       ${ url }
@@ -107,9 +111,9 @@
     <% path = Hdfs.urlsplit(url)[2] %>
     % if path:
       % if path.startswith(posixpath.sep):
-        /filebrowser/view${path}
+        /filebrowser/view=${path}
       % else:
-        /filebrowser/home_relative_view/${path}
+        /filebrowser/home_relative_view=/${path}
       % endif
     % else:
       javascript:void(0)
@@ -356,7 +360,7 @@
         // check if it's a relative path
         var pathAddition = "";
         if ($.trim(inputElement.val()) != "") {
-          var checkPath = "/filebrowser/chooser${ workflow.deployment_dir }" + "/" + inputElement.val();
+          var checkPath = "/filebrowser/chooser=${ workflow.deployment_dir }" + "/" + inputElement.val();
           $.getJSON(checkPath, function (data) {
             pathAddition = "${ workflow.deployment_dir }/";
             callFileChooser();
@@ -544,7 +548,7 @@ var cron_i18n = {
     error2: '${_('Bad number of elements')}',
     error3: '${_('The jquery_element should be set into jqCron settings')}',
     error4: '${_('Unrecognized expression')}',
-    weekdays: ['${_('monday')}', '${_('tuesday')}', '${_('wednesday')}', '${_('thursday')}', '${_('friday')}', '${_('saturday')}', '${_('sunday')}'],
+    weekdays: ['${_('sunday')}', '${_('monday')}', '${_('tuesday')}', '${_('wednesday')}', '${_('thursday')}', '${_('friday')}', '${_('saturday')}'],
     months: ['${_('january')}', '${_('february')}', '${_('march')}', '${_('april')}', '${_('may')}', '${_('june')}', '${_('july')}', '${_('august')}', '${_('september')}', '${_('october')}', '${_('november')}', '${_('december')}']
 }
 function renderCrons() {
@@ -594,13 +598,13 @@ function renderCrons() {
 
   $(document).ready(function(){
     $(".bulkToolbarBtn").on("click", function(){
-      $(".btn-toolbar").find(".loader").removeClass("hide");
-      $(".bulkToolbarBtn").hide();
       if ($(this).data("operation") == "kill"){
         bulkOperationConfirmation($(this).data("operation"));
       }
       else {
         bulkOperation($(this).data("operation"));
+        $(".btn-toolbar").find(".loader").removeClass("hide");
+        $(".bulkToolbarBtn").hide();
       }
     });
 
@@ -631,15 +635,14 @@ function renderCrons() {
 
     $("#bulkConfirmation").modal({
       show: false
-    }).on("hidden", function(){
-      $(".btn-toolbar").find(".loader").addClass("hide");
-      $(".bulkToolbarBtn").show();
     });
-
 
     function bulkOperationConfirmation(what){
       $("#bulkConfirmation").modal("show");
+      $("#bulkConfirmation a.btn-danger").off("click");
       $("#bulkConfirmation a.btn-danger").on("click", function(){
+        $(".btn-toolbar").find(".loader").removeClass("hide");
+        $(".bulkToolbarBtn").hide();
         bulkOperation(what);
         $("#bulkConfirmation").modal("hide");
       });

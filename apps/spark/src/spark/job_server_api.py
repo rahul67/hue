@@ -79,12 +79,13 @@ class JobServerApi(object):
       self._thread_local.user = user.username
     else:
       self._thread_local.user = user
-  
+
   def get_status(self):
     return self._root.get('sessions')
 
-  def create_session(self, **kwargs):
-    return self._root.post('sessions', data=json.dumps(kwargs), contenttype='application/json')
+  def create_session(self, **properties):
+    properties['proxyUser'] = self.user
+    return self._root.post('sessions', data=json.dumps(properties), contenttype='application/json')
 
   def get_session(self, uuid):
     return self._root.get('sessions/%s' % uuid)
@@ -102,3 +103,36 @@ class JobServerApi(object):
 
   def cancel(self, session):
     return self._root.post('sessions/%s/interrupt' % session)
+
+  def close(self, uuid):
+    return self._root.delete('sessions/%s' % uuid)
+
+  def get_batches(self):
+    return self._root.get('batches')
+
+  def submit_batch(self, properties):
+    properties['proxyUser'] = self.user
+    return self._root.post('batches', data=json.dumps(properties), contenttype=_JSON_CONTENT_TYPE)
+
+  def get_batch(self, uuid):
+    return self._root.get('batches/%s' % uuid)
+
+  def get_batch_status(self, uuid):
+    response = self._root.get('batches/%s/state' % uuid)
+    return response['state']
+
+  def get_batch_log(self, uuid, startFrom=None, size=None):
+    params = {}
+
+    if startFrom is not None:
+      params['from'] = startFrom
+
+    if size is not None:
+      params['size'] = size
+
+    response = self._root.get('batches/%s/log' % uuid, params=params)
+
+    return '\n'.join(response['log'])
+
+  def close_batch(self, uuid):
+    return self._root.delete('batches/%s' % uuid)

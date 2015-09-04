@@ -25,13 +25,16 @@
   from django.utils.translation import ugettext as _
 %>
 
-<%def name="import_layout()">
+<%def name="import_layout(with_deferred=False)">
   <link rel="stylesheet" href="${ static('desktop/css/common_dashboard.css') }">
   <script src="${ static('desktop/js/ko.common-dashboard.js') }" type="text/javascript" charset="utf-8"></script>
   <script src="${ static('desktop/ext/js/jquery/plugins/jquery-ui-1.10.4.draggable-droppable-sortable.min.js') }" type="text/javascript" charset="utf-8"></script>
-  <script src="${ static('desktop/ext/js/knockout-min.js') }" type="text/javascript" charset="utf-8"></script>
-  <script src="${ static('desktop/ext/js/knockout.mapping-2.3.2.js') }" type="text/javascript" charset="utf-8"></script>
+  <script src="${ static('desktop/ext/js/knockout.min.js') }" type="text/javascript" charset="utf-8"></script>
+  <script src="${ static('desktop/ext/js/knockout-mapping.min.js') }" type="text/javascript" charset="utf-8"></script>
   <script src="${ static('desktop/ext/js/knockout-sortable.min.js') }" type="text/javascript" charset="utf-8"></script>
+  %if with_deferred:
+  <script src="${ static('desktop/ext/js/knockout-deferred-updates.min.js') }" type="text/javascript" charset="utf-8"></script>
+  %endif
 </%def>
 
 <%def name="layout_toolbar()">
@@ -121,6 +124,18 @@
 
 <div data-bind="css: {'dashboard': true, 'with-top-margin': isEditing()}">
   <div class="container-fluid">
+    <!-- ko if: $root.selectedQDefinition() != null -->
+    <div class="row-fluid">
+      <div class="card card-additional card-home span12">
+        <a class="pointer pull-right" data-bind="click: $root.collection.unloadQDefinition"><i class="fa fa-times"></i></a>
+        <strong data-bind="editable: $root.selectedQDefinition().name, editableOptions: {enabled: true, placement: 'right'}"></strong>
+        <!-- ko if: $root.selectedQDefinition().hasChanged() -->
+        &nbsp;&nbsp;
+        <a class="pointer" data-bind="click: $root.collection.reloadQDefinition" title="${ _('Reload this definition') }"><i class="fa fa-undo"></i></a> <a class="pointer" data-bind="click: $root.collection.updateQDefinition" title="${ _('Update the definition') }"><i class="fa fa-save"></i></a>
+        <!-- /ko -->
+      </div>
+    </div>
+    <!-- /ko -->
     <div class="row-fluid" data-bind="template: { name: 'column-template', foreach: columns}">
     </div>
     <div class="clearfix"></div>
@@ -238,6 +253,8 @@
 
 <%def name="import_charts()">
   <link rel="stylesheet" href="${ static('desktop/ext/css/leaflet.css') }">
+  <link rel="stylesheet" href="${ static('desktop/ext/css/leaflet.markercluster.css') }">
+  <link rel="stylesheet" href="${ static('desktop/ext/css/leaflet.zoombox.css') }">
   <link rel="stylesheet" href="${ static('desktop/ext/css/nv.d3.min.css') }">
   <link rel="stylesheet" href="${ static('desktop/css/nv.d3.css') }">
 
@@ -245,6 +262,8 @@
   <script src="${ static('desktop/js/hue.colors.js') }" type="text/javascript" charset="utf-8"></script>
 
   <script src="${ static('desktop/ext/js/leaflet/leaflet.js') }" type="text/javascript" charset="utf-8"></script>
+  <script src="${ static('desktop/ext/js/leaflet/leaflet.markercluster.js') }" type="text/javascript" charset="utf-8"></script>
+  <script src="${ static('desktop/ext/js/leaflet/leaflet.zoombox.js') }" type="text/javascript" charset="utf-8"></script>
 
   <script src="${ static('desktop/ext/js/d3.v3.js') }" type="text/javascript" charset="utf-8"></script>
   <script src="${ static('desktop/js/nv.d3.js') }" type="text/javascript" charset="utf-8"></script>

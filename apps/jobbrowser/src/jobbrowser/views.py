@@ -21,6 +21,7 @@ import time
 import logging
 import string
 import urlparse
+
 from urllib import quote_plus
 from lxml import html
 
@@ -40,10 +41,13 @@ from desktop.views import register_status_bar_view
 from hadoop import cluster
 from hadoop.api.jobtracker.ttypes import ThriftJobPriority, TaskTrackerNotFoundException, ThriftJobState
 from hadoop.yarn.clients import get_log_client
+import hadoop.yarn.resource_manager_api as resource_manager_api
 
-from jobbrowser import conf
+from jobbrowser.conf import SHARE_JOBS
+from jobbrowser.conf import DISABLE_KILLING_JOBS
 from jobbrowser.api import get_api, ApplicationNotRunning, JobExpired
-from jobbrowser.models import Job, JobLinkage, Tracker, Cluster, can_view_job, can_modify_job
+from jobbrowser.models import Job, JobLinkage, Tracker, Cluster, can_view_job, can_modify_job, LinkJobLogs, can_kill_job
+from jobbrowser.yarn_models import Application
 
 import urllib2
 
@@ -61,14 +65,18 @@ def check_job_permission(view_func):
     try:
       job = get_api(request.user, request.jt).get_job(jobid=jobid)
     except ApplicationNotRunning, e:
-      # reverse() seems broken, using request.path but beware, it discards GET and POST info
-      return job_not_assigned(request, jobid, request.path)
+      if e.job.get('state', '').lower() == 'accepted' and 'kill' in request.path:
+        rm_api = resource_manager_api.get_resource_manager(request.user)
+        job = Application(e.job, rm_api)
+      else:
+        # reverse() seems broken, using request.path but beware, it discards GET and POST info
+        return job_not_assigned(request, jobid, request.path)
     except JobExpired, e:
       raise PopupException(_('Job %s has expired.') % jobid, detail=_('Cannot be found on the History Server.'))
     except Exception, e:
       raise PopupException(_('Could not find job %s.') % jobid, detail=e)
 
-    if not conf.SHARE_JOBS.get() and not request.user.is_superuser \
+    if not SHARE_JOBS.get() and not request.user.is_superuser \
         and job.user != request.user.username and not can_view_job(request.user.username, job):
       raise PopupException(_("You don't have permission to access job %(id)s.") % {'id': jobid})
     kwargs['job'] = job
@@ -101,7 +109,8 @@ def jobs(request):
 
   if request.GET.get('format') == 'json':
     try:
-      jobs = get_api(request.user, request.jt).get_jobs(user=request.user, username=user, state=state, text=text, retired=retired)
+      # Limit number of jobs to be 10,000
+      jobs = get_api(request.user, request.jt).get_jobs(user=request.user, username=user, state=state, text=text, retired=retired, limit=10000)
     except Exception, ex:
       ex_message = str(ex)
       if 'Connection refused' in ex_message or 'standby RM' in ex_message:
@@ -150,16 +159,16 @@ def massage_job_for_json(job, request):
     'finishedReduces': job.finishedReduces,
     'reducesPercentComplete': int(job.reduces_percent_complete) if job.reduces_percent_complete else '',
     'jobFile': hasattr(job, 'jobFile') and job.jobFile or '',
-    'launchTimeMs': hasattr(job, 'launchTimeMs') and job.launchTimeMs or '',
+    'launchTimeMs': hasattr(job, 'launchTimeMs') and job.launchTimeMs or 0,
     'launchTimeFormatted': hasattr(job, 'launchTimeFormatted') and job.launchTimeFormatted or '',
-    'startTimeMs': hasattr(job, 'startTimeMs') and job.startTimeMs or '',
+    'startTimeMs': hasattr(job, 'startTimeMs') and job.startTimeMs or 0,
     'startTimeFormatted': hasattr(job, 'startTimeFormatted') and job.startTimeFormatted or '',
-    'finishTimeMs': hasattr(job, 'finishTimeMs') and job.finishTimeMs or '',
+    'finishTimeMs': hasattr(job, 'finishTimeMs') and job.finishTimeMs or 0,
     'finishTimeFormatted': hasattr(job, 'finishTimeFormatted') and job.finishTimeFormatted or '',
     'durationFormatted': hasattr(job, 'durationFormatted') and job.durationFormatted or '',
-    'durationMs': hasattr(job, 'durationInMillis') and job.durationInMillis or '',
-    'canKill': job.status.lower() in ('running', 'pending') and (request.user.is_superuser or request.user.username == job.user or can_modify_job(request.user.username, job)),
-    'killUrl': job.jobId and reverse('jobbrowser.views.kill_job', kwargs={'job': job.jobId}) or ''
+    'durationMs': hasattr(job, 'durationInMillis') and job.durationInMillis or 0,
+    'canKill': can_kill_job(job, request.user),
+    'killUrl': job.jobId and reverse('jobbrowser.views.kill_job', kwargs={'job': job.jobId}) or '',
   }
   return job
 
@@ -288,9 +297,9 @@ def job_attempt_logs_json(request, job, attempt_index=0, name='syslog', offset=0
       debug_info += '\nHTML Response: %s' % response
       LOGGER.error(debug_info)
     except:
-      pass
+      LOGGER.exception('failed to create debug info')
 
-  response = {'log': log, 'debug': debug_info}
+  response = {'log': LinkJobLogs._make_hdfs_links(log), 'debug': debug_info}
 
   return JsonResponse(response)
 
@@ -351,7 +360,6 @@ def tasks(request, job):
   jt = get_api(request.user, request.jt)
 
   task_list = jt.get_tasks(job.jobId, **filters)
-  page = jt.paginate_task(task_list, pagenum)
 
   filter_params = copy_query_dict(request.GET, ('tasktype', 'taskstate', 'tasktext')).urlencode()
 
@@ -359,7 +367,7 @@ def tasks(request, job):
     'request': request,
     'filter_params': filter_params,
     'job': job,
-    'page': page,
+    'task_list': task_list,
     'tasktype': ttypes,
     'taskstate': tstates,
     'tasktext': ttext
@@ -441,9 +449,12 @@ def single_task_attempt_logs(request, job, taskid, attemptid):
 
   if request.GET.get('format') == 'python':
     return context
-  elif request.GET.get('format') == 'json':
+  else:
+    context['logs'] = [LinkJobLogs._make_links(log) for i, log in enumerate(logs)]
+
+  if request.GET.get('format') == 'json':
     response = {
-      "logs": logs,
+      "logs": context['logs'],
       "isRunning": job.status.lower() in ('running', 'pending', 'prep')
     }
     return JsonResponse(response)

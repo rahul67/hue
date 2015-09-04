@@ -24,7 +24,7 @@
         <groupId>com.cloudera.hue</groupId>
         <artifactId>hue-parent</artifactId>
         <relativePath>../../../maven/pom.xml</relativePath>
-        <version>3.7.0-SNAPSHOT</version>
+        <version>3.9.0-SNAPSHOT</version>
     </parent>
 
     <groupId>com.cloudera.hue.livy</groupId>
@@ -48,14 +48,17 @@
 
     <properties>
         <guava.version>11.0.2</guava.version>
-        <jetty.version>8.1.14.v20131031</jetty.version>
-        <json4s.version>3.2.11</json4s.version>
+        <jetty.version>9.2.10.v20150310</jetty.version>
+        <json4s.version>3.2.5</json4s.version>
         <logback.version>1.1.2</logback.version>
-        <scala.version>2.10.3</scala.version>
+        <scala.version>2.10.4</scala.version>
         <scala.binary.version>2.10</scala.binary.version>
-        <scalatra.version>2.2.1</scalatra.version>
+        <scalatra.version>2.3.0</scalatra.version>
         <dispatch.version>0.11.2</dispatch.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <httpclient.version>4.5</httpclient.version>
+        <httpcore.version>4.4.1</httpcore.version>
+        <commons-codec.version>1.9</commons-codec.version>
     </properties>
 
     <modules>
@@ -210,6 +213,24 @@
                 <version>${dispatch.version}</version>
             </dependency>
 
+            <dependency>
+                <groupId>org.apache.httpcomponents</groupId>
+                <artifactId>httpclient</artifactId>
+                <version>${httpclient.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.apache.httpcomponents</groupId>
+                <artifactId>httpcore</artifactId>
+                <version>${httpcore.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>commons-codec</groupId>
+                <artifactId>commons-codec</artifactId>
+                <version>${commons-codec.version}</version>
+            </dependency>
+
         </dependencies>
     </dependencyManagement>
 
@@ -301,6 +322,10 @@
                     </executions>
                     <configuration>
                         <scalaVersion>${scala.version}</scalaVersion>
+                        <args>
+                            <arg>-deprecation</arg>
+                            <arg>-feature</arg>
+                        </args>
                     </configuration>
                 </plugin>
 
@@ -424,19 +449,6 @@
                             <include>com.google.guava:guava</include>
                         </includes>
                     </artifactSet>
-                    <relocations>
-                        <relocation>
-                            <pattern>org.eclipse.jetty</pattern>
-                            <shadedPattern>com.cloudera.hue.jetty</shadedPattern>
-                            <excludes>
-                                <exclude>com/google/common/base/Absent*</exclude>
-                                <exclude>com/google/common/base/Function*</exclude>
-                                <exclude>com/google/common/base/Optional*</exclude>
-                                <exclude>com/google/common/base/Present*</exclude>
-                                <exclude>com/google/common/base/Supplier</exclude>
-                            </excludes>
-                        </relocation>
-                    </relocations>
                 </configuration>
                 <executions>
                     <execution>

@@ -15,7 +15,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 import base64
 import json
 import logging
@@ -30,16 +29,18 @@ from django.utils.translation import ugettext as _
 from desktop.lib.django_util import JsonResponse, render
 
 from hbase import conf
+from hbase.hbase_site import is_impersonation_enabled
 from hbase.settings import DJANGO_APPS
 from hbase.api import HbaseApi
 from hbase.management.commands import hbase_setup
-from server.hbase_lib import get_thrift_type
+from hbase.server.hbase_lib import get_thrift_type
+
 
 LOG = logging.getLogger(__name__)
 
 
 def has_write_access(user):
-  return user.is_superuser or user.has_hue_permission(action="write", app=DJANGO_APPS[0])
+  return user.is_superuser or user.has_hue_permission(action="write", app=DJANGO_APPS[0]) or is_impersonation_enabled()
 
 def app(request):
   return render('app.mako', request, {
@@ -53,6 +54,7 @@ def api_router(request, url): # On split, deserialize anything
     try:
       return json.loads(re.sub(r'(?:\")([0-9]+)(?:\")', r'\1', str(raw)))
     except:
+      LOG.exception('failed to parse input as json')
       return raw
 
   def deserialize(data):
@@ -84,6 +86,7 @@ def api_dump(response):
       json.dumps(data)
       return data
     except:
+      LOG.exception('Failed to dump data as JSON')
       cleaned = {}
       lim = [0]
       if isinstance(data, str): # Not JSON dumpable, meaning some sort of bytestring or byte data

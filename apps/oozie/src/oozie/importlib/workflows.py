@@ -42,7 +42,7 @@ from django.utils.translation import ugettext as _
 
 from desktop.models import Document
 
-from oozie.conf import DEFINITION_XSLT_DIR
+from oozie.conf import DEFINITION_XSLT_DIR, DEFINITION_XSLT2_DIR
 from oozie.models import Workflow, Node, Link, Start, End,\
                          Decision, DecisionEnd, Fork, Join,\
                          Kill
@@ -674,7 +674,7 @@ def import_workflow_root(workflow, workflow_definition_root, metadata=None, fs=N
     workflow.name = workflow_definition_root.get('name')
     workflow.save()
   except:
-    workflow.delete(skip_trash=True)
+    LOG.exception('failed to import workflow root')
     raise
 
 
@@ -685,3 +685,13 @@ def import_workflow(workflow, workflow_definition, metadata=None, fs=None):
     raise RuntimeError(_("Could not find any nodes in Workflow definition. Maybe it's malformed?"))
 
   return import_workflow_root(workflow, workflow_definition_root, metadata, fs)
+
+
+class MalformedWfDefException(Exception):
+  pass
+
+
+class InvalidTagWithNamespaceException(Exception):
+  def __init__(self, namespace):
+    self.namespace = namespace
+    self.namespaces = ', '.join(OOZIE_NAMESPACES)

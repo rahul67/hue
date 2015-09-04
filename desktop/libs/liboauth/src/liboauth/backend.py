@@ -30,6 +30,7 @@ from django.contrib.auth.models import User
 from django.http import HttpResponseRedirect
 from django.utils.translation import ugettext as _
 
+from desktop import metrics
 from desktop.auth.backend import DesktopBackendBase
 from desktop.auth.backend import rewrite_user
 from useradmin.models import get_profile, get_default_user_group, UserProfile
@@ -40,13 +41,14 @@ import liboauth.conf
 try:
   import oauth2 as oauth
 except:
-  pass
+  oauth = None
 
 
 LOG = logging.getLogger(__name__)
 
 class OAuthBackend(DesktopBackendBase):
 
+  @metrics.oauth_authentication_time
   def authenticate(self, access_token):
     username = access_token['screen_name']
     password = access_token['oauth_token_secret']
@@ -89,6 +91,7 @@ class OAuthBackend(DesktopBackendBase):
 
   @classmethod
   def handleAuthenticationRequest(self, request):
+    assert oauth is not None
  
     if 'oauth_verifier' in request.GET:
         social = 'twitter'
@@ -186,6 +189,7 @@ class OAuthBackend(DesktopBackendBase):
 
   @classmethod
   def handleLoginRequest(self, request):
+    assert oauth is not None
     
     redirect_uri = 'http://' + request.get_host() + '/oauth/social_login/oauth_authenticated'
     response_type = "code"

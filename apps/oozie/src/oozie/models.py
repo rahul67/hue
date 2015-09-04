@@ -27,7 +27,7 @@ from datetime import datetime,  timedelta
 from string import Template
 from itertools import chain
 
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Q
 from django.core.urlresolvers import reverse
 from django.core.validators import RegexValidator
@@ -109,7 +109,7 @@ class Job(models.Model):
   Base class for Oozie Workflows, Coordinators and Bundles.
   """
   owner = models.ForeignKey(User, db_index=True, verbose_name=_t('Owner'), help_text=_t('Person who can modify the job.')) # Deprecated
-  name = models.CharField(max_length=40, blank=False, validators=[name_validator], # Deprecated
+  name = models.CharField(max_length=255, blank=False, validators=[name_validator], # Deprecated
       help_text=_t('Name of the job, which must be unique per user.'), verbose_name=_t('Name'))
   description = models.CharField(max_length=1024, blank=True, verbose_name=_t('Description'), # Deprecated
                                  help_text=_t('The purpose of the job.'))
@@ -129,7 +129,6 @@ class Job(models.Model):
   data = models.TextField(blank=True, default=json.dumps({}))  # e.g. data=json.dumps({'sla': [python data], ...})
 
   objects = JobManager()
-  unique_together = ('owner', 'name')
 
   def delete(self, skip_trash=False, *args, **kwargs):
     if skip_trash:
@@ -312,7 +311,8 @@ class WorkflowManager(models.Manager):
     try:
       workflow.coordinator_set.update(workflow=None) # In Django 1.3 could do ON DELETE set NULL
     except:
-      pass
+      LOG.exception('failed to destroy workflow')
+
     workflow.save()
     workflow.delete(skip_trash=True)
 
@@ -359,8 +359,6 @@ class Workflow(Job):
     else:
       owner = self.owner
 
-    copy_doc = self.doc.get().copy(name=name, owner=owner)
-
     copy = self
     copy.pk = None
     copy.id = None
@@ -368,6 +366,11 @@ class Workflow(Job):
     copy.deployment_dir = ''
     copy.owner = owner
     copy.save()
+
+    copy_doc = Document.objects.link(copy,
+        owner=copy.owner,
+        name=copy.name,
+        description=copy.description)
 
     copy.doc.all().delete()
     copy.doc.add(copy_doc)
@@ -540,18 +543,20 @@ class Workflow(Job):
   @classmethod
   def gen_status_graph_from_xml(cls, user, oozie_workflow):
     from oozie.importlib.workflows import import_workflow # Circular dependency
+
     try:
-      workflow = Workflow.objects.new_workflow(user)
-      workflow.save()
-      try:
+      with transaction.atomic():
+        workflow = Workflow.objects.new_workflow(user)
+        workflow.save()
+
         import_workflow(workflow, oozie_workflow.definition)
         graph =  workflow.gen_status_graph(oozie_workflow)
-        return graph, workflow.node_list
-      except Exception, e:
-        LOG.warn('Workflow %s could not be converted to a graph: %s' % (oozie_workflow.id, e))
-    finally:
-      if workflow.pk is not None:
+        node_list = workflow.node_list
         workflow.delete(skip_trash=True)
+        return graph, node_list
+    except Exception, e:
+      LOG.warn('Workflow %s could not be converted to a graph: %s' % (oozie_workflow.id, e))
+
     return None, []
 
   def to_xml(self, mapping=None):
@@ -632,7 +637,7 @@ class Node(models.Model):
   """
   PARAM_FIELDS = ()
 
-  name = models.CharField(max_length=40, validators=[name_validator], verbose_name=_t('Name'),
+  name = models.CharField(max_length=255, validators=[name_validator], verbose_name=_t('Name'),
                           help_text=_t('Name of the action, which must be unique by workflow.'))
   description = models.CharField(max_length=1024, blank=True, default='', verbose_name=_t('Description'),
                                  help_text=_t('The purpose of the action.'))
@@ -641,8 +646,6 @@ class Node(models.Model):
   workflow = models.ForeignKey(Workflow)
   children = models.ManyToManyField('self', related_name='parents', symmetrical=False, through=Link)
   data = models.TextField(blank=True, default=json.dumps({}))
-
-  unique_together = ('workflow', 'name')
 
   def get_full_node(self):
     if self.node_type == Mapreduce.node_type:
@@ -1447,8 +1450,6 @@ class Coordinator(Job):
     else:
       owner = self.owner
 
-    copy_doc = self.doc.get().copy(name=name, owner=owner)
-
     copy = self
     copy.pk = None
     copy.id = None
@@ -1456,6 +1457,11 @@ class Coordinator(Job):
     copy.deployment_dir = ''
     copy.owner = owner
     copy.save()
+
+    copy_doc = Document.objects.link(copy,
+        owner=copy.owner,
+        name=copy.name,
+        description=copy.description)
 
     copy.doc.all().delete()
     copy.doc.add(copy_doc)
@@ -1676,7 +1682,6 @@ class Dataset(models.Model):
                                help_text=_t('Optional: Shift the frequency for gettting past/future end dates or enter verbatim the Oozie end instance.'))
 
   objects = DatasetManager()
-  unique_together = ('coordinator', 'name')
 
   def __unicode__(self):
     return '%s' % (self.name,)
@@ -1730,8 +1735,6 @@ class DataInput(models.Model):
                                  help_text=_t('The pattern of the input data we want to process.'))
   coordinator = models.ForeignKey(Coordinator)
 
-  unique_together = ('coordinator', 'name')
-
 
 class DataOutput(models.Model):
   name = models.CharField(max_length=40, validators=[name_validator], verbose_name=_t('Name of an output variable in the workflow'),
@@ -1739,8 +1742,6 @@ class DataOutput(models.Model):
   dataset = models.OneToOneField(Dataset, verbose_name=_t('The dataset representing the format of the data output.'),
                                  help_text=_t('The pattern of the output data we want to generate.'))
   coordinator = models.ForeignKey(Coordinator)
-
-  unique_together = ('coordinator', 'name')
 
 
 class BundledCoordinator(models.Model):
@@ -1788,8 +1789,6 @@ class Bundle(Job):
     else:
       owner = self.owner
 
-    copy_doc = self.doc.get().copy(name=name, owner=owner)
-
     copy = self
     copy.pk = None
     copy.id = None
@@ -1797,6 +1796,11 @@ class Bundle(Job):
     copy.deployment_dir = ''
     copy.owner = owner
     copy.save()
+
+    copy_doc = Document.objects.link(copy,
+        owner=copy.owner,
+        name=copy.name,
+        description=copy.description)
 
     copy.doc.all().delete()
     copy.doc.add(copy_doc)

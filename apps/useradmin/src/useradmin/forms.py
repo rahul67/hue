@@ -96,10 +96,19 @@ class UserChangeForm(django.contrib.auth.forms.UserChangeForm):
     if self.instance.id:
       self.fields['username'].widget.attrs['readonly'] = True
 
-    if desktop_conf.AUTH.BACKEND.get() == 'desktop.auth.backend.LdapBackend':
+    if 'desktop.auth.backend.LdapBackend' in desktop_conf.AUTH.BACKEND.get():
       self.fields['password1'].widget.attrs['readonly'] = True
       self.fields['password2'].widget.attrs['readonly'] = True
       self.fields['password_old'].widget.attrs['readonly'] = True
+      self.fields['first_name'].widget.attrs['readonly'] = True
+      self.fields['last_name'].widget.attrs['readonly'] = True
+      self.fields['email'].widget.attrs['readonly'] = True
+      if 'is_active' in self.fields:
+        self.fields['is_active'].widget.attrs['readonly'] = True
+      if 'is_superuser' in self.fields:
+        self.fields['is_superuser'].widget.attrs['readonly'] = True
+      if 'groups' in self.fields:
+        self.fields['groups'].widget.attrs['readonly'] = True
 
   def clean_password(self):
     return self.cleaned_data["password"]
@@ -137,6 +146,18 @@ class UserChangeForm(django.contrib.auth.forms.UserChangeForm):
       # groups must be saved after the user
       self.save_m2m()
     return user
+
+
+class PasswordChangeForm(UserChangeForm):
+  """
+  This inherits from UserChangeForm to allow for forced password change on first login
+  """
+  class Meta(UserChangeForm.Meta):
+    exclude = ('first_name', 'last_name', 'email')
+
+  def __init__(self, *args, **kwargs):
+    super(PasswordChangeForm, self).__init__(*args, **kwargs)
+    self.fields.pop('ensure_home_directory')
 
 
 class SuperUserChangeForm(UserChangeForm):

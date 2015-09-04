@@ -17,7 +17,7 @@
 
 <%!
   import posixpath
-  from oozie.utils import smart_path
+  from oozie.utils import smart_path, contains_symlink
 %>
 
 
@@ -27,15 +27,23 @@
 <%def name="credentials(credentials)">${ ' cred="%s"' % ','.join(credentials) if credentials else '' | n,unicode }</%def>
 
 
+<%def name="retry_max(retry)">${ ' retry-max="%(value)s"' % retry[0] if retry else '' | n,unicode }</%def>
+
+
+<%def name="retry_interval(retry)">${ ' retry-interval="%(value)s"' % retry[0] if retry else '' | n,unicode }</%def>
+
+
 <%def name="prepares(prepares)">
-        % if prepares:
+        % if prepares and any(p for p in prepares if p['value']):
             <prepare>
                 % for p in sorted(prepares, key=lambda k: k['type']):
                   <%
                     operation = p['type']
                     path = p['value']
                   %>
+                  % if path:
                   <${ operation } path="${ smart_path(path, mapping) }"/>
+                  % endif
                 % endfor
             </prepare>
         % endif
@@ -59,7 +67,11 @@
 <%def name="distributed_cache(files, archives)">
     % for f in files:
         % if f:
+          % if contains_symlink(f['value'], mapping):
+            <file>${ f['value'] }</file>
+          % else:
             <file>${ filelink(f['value']) }</file>
+          % endif
         % endif
     % endfor
     % for a in archives:

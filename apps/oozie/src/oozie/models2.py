@@ -40,7 +40,7 @@ from liboozie.submission2 import Submission
 from liboozie.submission2 import create_directories
 
 from oozie.conf import REMOTE_SAMPLE_DIR
-from oozie.utils import utc_datetime_format
+from oozie.utils import utc_datetime_format, UTC_TIME_FORMAT
 from hadoop.fs.exceptions import WebHdfsException
 
 
@@ -54,6 +54,9 @@ class Job(object):
 
     for param in self.parameters:
       params[param['name'].strip()] = param['value']
+
+    if params.get('nominal_time') == '':
+      params['nominal_time'] = datetime.today().strftime(UTC_TIME_FORMAT)
 
     return  [{'name': name, 'value': value} for name, value in params.iteritems() if with_lib_path or name != 'oozie.use.system.libpath']
 
@@ -164,6 +167,16 @@ class Workflow(Job):
       ]
     if 'show_arrows' not in _data['workflow']['properties']:
       _data['workflow']['properties']['show_arrows'] = True
+
+    for node in _data['workflow']['nodes']:
+      if 'credentials' in node['properties']: # If node is an Action
+        if 'retry_max' not in node['properties']: # When displaying a workflow
+          node['properties']['retry_max'] = []
+        if 'retry_interval' not in node['properties']:
+          node['properties']['retry_interval'] = []
+
+      # Backward compatibility
+      _upgrade_sqoop_node(node)
 
     return _data
 
@@ -279,9 +292,6 @@ class Workflow(Job):
       LOG.error(msg)
       raise PopupException(msg)
 
-  def gen_status_graph(self, oozie_workflow):
-    return ''
-
   def get_absolute_url(self):
     return reverse('oozie:edit_workflow') + '?workflow=%s' % self.id
 
@@ -306,6 +316,13 @@ class Node():
 
     if self.data['type'] == 'hive2' and not self.data['properties']['jdbc_url']:
       self.data['properties']['jdbc_url'] = _get_hiveserver2_url()
+
+    if self.data['type'] == 'fork':
+      links = [link for link in self.data['children'] if link['to'] in node_mapping]
+      if len(links) != len(self.data['children']):
+        LOG.warn('Fork has some children links that do not exist, ignoring them: links %s, existing links %s, links %s, existing links %s' \
+                 % (len(links), len(self.data['children']), links, self.data['children']))
+        self.data['children'] = links
 
     data = {
       'node': self.data,
@@ -349,6 +366,13 @@ class Node():
       self.data['properties']['archives'] = []
     if 'sla' not in self.data['properties']:
       self.data['properties']['sla'] = Workflow.SLA_DEFAULT
+    if 'retry_max' not in self.data['properties']:
+      self.data['properties']['retry_max'] = []
+    if 'retry_interval' not in self.data['properties']:
+      self.data['properties']['retry_interval'] = []
+
+    # Backward compatibility
+    _upgrade_sqoop_node(self.data)
 
   def get_template_name(self):
     return 'editor2/gen/workflow-%s.xml.mako' % self.data['type']
@@ -357,11 +381,17 @@ class Node():
     return find_parameters(self) + (find_parameters(self, ['sla']) if self.sla_enabled else [])
 
 
+def _upgrade_sqoop_node(node):
+  if node['type'] in ('sqoop', 'sqoop-widget') and 'arguments' not in node['properties']:
+    node['properties']['arguments'] = node['properties']['parameters']
+
+
 class Action(object):
 
   @classmethod
   def get_fields(cls):
-    return [(f['name'], f['value']) for f in cls.FIELDS.itervalues()] + [('sla', Workflow.SLA_DEFAULT), ('credentials', [])]
+    credentials = [cls.DEFAULT_CREDENTIALS] if hasattr(cls, 'DEFAULT_CREDENTIALS') else []
+    return [(f['name'], f['value']) for f in cls.FIELDS.itervalues()] + [('sla', Workflow.SLA_DEFAULT), ('credentials', credentials)]
 
 
 class StartNode(Action):
@@ -432,6 +462,20 @@ class PigAction(Action):
           'label': _('Job XML'),
           'value': [],
           'help_text': _('Refer to a Hadoop JobConf job.xml'),
+          'type': ''
+     },
+     'retry_max': {
+          'name': 'retry_max',
+          'label': _('Max retry'),
+          'value': [],
+          'help_text': _('Number of times, default is 3'),
+          'type': ''
+     },
+     'retry_interval': {
+          'name': 'retry_interval',
+          'label': _('Retry interval'),
+          'value': [],
+          'help_text': _('Wait time in minutes, default is 10'),
           'type': ''
      }
   }
@@ -518,6 +562,20 @@ class JavaAction(Action):
           'value': [],
           'help_text': _('Refer to a Hadoop JobConf job.xml'),
           'type': ''
+     },
+     'retry_max': {
+          'name': 'retry_max',
+          'label': _('Max retry'),
+          'value': [],
+          'help_text': _('Number of times, default is 3'),
+          'type': ''
+     },
+     'retry_interval': {
+          'name': 'retry_interval',
+          'label': _('Retry interval'),
+          'value': [],
+          'help_text': _('Wait time in minutes, default is 10'),
+          'type': ''
      }
   }
 
@@ -528,6 +586,7 @@ class JavaAction(Action):
 
 class HiveAction(Action):
   TYPE = 'hive'
+  DEFAULT_CREDENTIALS = 'hcat'
   FIELDS = {
      'script_path': {
           'name': 'script_path',
@@ -578,6 +637,20 @@ class HiveAction(Action):
           'value': '',
           'help_text': _('Refer to a hive-site.xml for connecting to Hive'),
           'type': ''
+     },
+     'retry_max': {
+          'name': 'retry_max',
+          'label': _('Max retry'),
+          'value': [],
+          'help_text': _('Number of times, default is 3'),
+          'type': ''
+     },
+     'retry_interval': {
+          'name': 'retry_interval',
+          'label': _('Retry interval'),
+          'value': [],
+          'help_text': _('Wait time in minutes, default is 10'),
+          'type': ''
      }
   }
 
@@ -598,6 +671,7 @@ def _get_hiveserver2_url():
 
 class HiveServer2Action(Action):
   TYPE = 'hive2'
+  DEFAULT_CREDENTIALS = 'hive2'
   FIELDS = {
      'script_path': {
           'name': 'script_path',
@@ -663,6 +737,20 @@ class HiveServer2Action(Action):
           'value': '',
           'help_text': _('Refer to a Hadoop JobConf job.xml'),
           'type': ''
+     },
+     'retry_max': {
+          'name': 'retry_max',
+          'label': _('Max retry'),
+          'value': [],
+          'help_text': _('Number of times, default is 3'),
+          'type': ''
+     },
+     'retry_interval': {
+          'name': 'retry_interval',
+          'label': _('Retry interval'),
+          'value': [],
+          'help_text': _('Wait time in minutes, default is 10'),
+          'type': ''
      }
   }
 
@@ -694,6 +782,20 @@ class SubWorkflowAction(Action):
           'value': [],
           'help_text': _('Can be used to specify the job properties that are required to run the child workflow job.'),
           'type': ''
+     },
+     'retry_max': {
+          'name': 'retry_max',
+          'label': _('Max retry'),
+          'value': [],
+          'help_text': _('Number of times, default is 3'),
+          'type': ''
+     },
+     'retry_interval': {
+          'name': 'retry_interval',
+          'label': _('Retry interval'),
+          'value': [],
+          'help_text': _('Wait time in minutes, default is 10'),
+          'type': ''
      }
   }
 
@@ -712,8 +814,8 @@ class SqoopAction(Action):
           'help_text': _('The full %(type)s command. Either put it here or split it by spaces and insert the parts as multiple parameters below.') % {'type': TYPE},
           'type': 'textarea'
      },
-     'parameters': {
-          'name': 'parameters',
+     'arguments': {
+          'name': 'arguments',
           'label': _('Arguments'),
           'value': [],
           'help_text': _('If no command is specified, split the command by spaces and insert the %(type)s parameters '
@@ -754,6 +856,20 @@ class SqoopAction(Action):
           'label': _('Job XML'),
           'value': '',
           'help_text': _('Refer to a Hadoop JobConf job.xml'),
+          'type': ''
+     },
+     'retry_max': {
+          'name': 'retry_max',
+          'label': _('Max retry'),
+          'value': [],
+          'help_text': _('Number of times, default is 3'),
+          'type': ''
+     },
+     'retry_interval': {
+          'name': 'retry_interval',
+          'label': _('Retry interval'),
+          'value': [],
+          'help_text': _('Wait time in minutes, default is 10'),
           'type': ''
      }
   }
@@ -807,6 +923,20 @@ class MapReduceAction(Action):
           'label': _('Job XML'),
           'value': '',
           'help_text': _('Refer to a Hadoop JobConf job.xml'),
+          'type': ''
+     },
+     'retry_max': {
+          'name': 'retry_max',
+          'label': _('Max retry'),
+          'value': [],
+          'help_text': _('Number of times, default is 3'),
+          'type': ''
+     },
+     'retry_interval': {
+          'name': 'retry_interval',
+          'label': _('Retry interval'),
+          'value': [],
+          'help_text': _('Wait time in minutes, default is 10'),
           'type': ''
      }
   }
@@ -885,6 +1015,20 @@ class ShellAction(Action):
           'value': '',
           'help_text': _('Refer to a Hadoop JobConf job.xml'),
           'type': ''
+     },
+     'retry_max': {
+          'name': 'retry_max',
+          'label': _('Max retry'),
+          'value': [],
+          'help_text': _('Number of times, default is 3'),
+          'type': ''
+     },
+     'retry_interval': {
+          'name': 'retry_interval',
+          'label': _('Retry interval'),
+          'value': [],
+          'help_text': _('Wait time in minutes, default is 10'),
+          'type': ''
      }
   }
 
@@ -927,6 +1071,21 @@ class SshAction(Action):
                          'via the String action:output(String node, String key) function') % {'program': TYPE},
           'type': ''
      },
+     # Common
+     'retry_max': {
+          'name': 'retry_max',
+          'label': _('Max retry'),
+          'value': [],
+          'help_text': _('Number of times, default is 3'),
+          'type': ''
+     },
+     'retry_interval': {
+          'name': 'retry_interval',
+          'label': _('Retry interval'),
+          'value': [],
+          'help_text': _('Wait time in minutes, default is 10'),
+          'type': ''
+     }
   }
 
   @classmethod
@@ -978,6 +1137,21 @@ class FsAction(Action):
           'value': [],
           'help_text': _('File or directory.'),
           'type': ''
+     },
+     # Common
+     'retry_max': {
+          'name': 'retry_max',
+          'label': _('Max retry'),
+          'value': [],
+          'help_text': _('Number of times, default is 3'),
+          'type': ''
+     },
+     'retry_interval': {
+          'name': 'retry_interval',
+          'label': _('Retry interval'),
+          'value': [],
+          'help_text': _('Wait time in minutes, default is 10'),
+          'type': ''
      }
   }
 
@@ -1017,6 +1191,21 @@ class EmailAction(Action):
           'help_text': _('Plain-text'),
           'type': 'textarea'
      },
+     # Common
+     'retry_max': {
+          'name': 'retry_max',
+          'label': _('Max retry'),
+          'value': [],
+          'help_text': _('Number of times, default is 3'),
+          'type': ''
+     },
+     'retry_interval': {
+          'name': 'retry_interval',
+          'label': _('Retry interval'),
+          'value': [],
+          'help_text': _('Wait time in minutes, default is 10'),
+          'type': ''
+     }
   }
 
   @classmethod
@@ -1071,6 +1260,20 @@ class StreamingAction(Action):
           'label': _('Job XML'),
           'value': '',
           'help_text': _('Refer to a Hadoop JobConf job.xml')
+     },
+     'retry_max': {
+          'name': 'retry_max',
+          'label': _('Max retry'),
+          'value': [],
+          'help_text': _('Number of times, default is 3'),
+          'type': ''
+     },
+     'retry_interval': {
+          'name': 'retry_interval',
+          'label': _('Retry interval'),
+          'value': [],
+          'help_text': _('Wait time in minutes, default is 10'),
+          'type': ''
      }
   }
 
@@ -1107,6 +1310,20 @@ class DistCpAction(Action):
           'label': _('Java options'),
           'value': '',
           'help_text': _('Parameters for the JVM, e.g. -Dprop1=a -Dprop2=b')
+     },
+     'retry_max': {
+          'name': 'retry_max',
+          'label': _('Max retry'),
+          'value': [],
+          'help_text': _('Number of times, default is 3'),
+          'type': ''
+     },
+     'retry_interval': {
+          'name': 'retry_interval',
+          'label': _('Retry interval'),
+          'value': [],
+          'help_text': _('Wait time in minutes, default is 10'),
+          'type': ''
      }
   }
 
@@ -1184,6 +1401,20 @@ class SparkAction(Action):
           'label': _('Job XML'),
           'value': '',
           'help_text': _('Refer to a Hadoop JobConf job.xml'),
+          'type': ''
+     },
+     'retry_max': {
+          'name': 'retry_max',
+          'label': _('Max retry'),
+          'value': [],
+          'help_text': _('Number of times, default is 3'),
+          'type': ''
+     },
+     'retry_interval': {
+          'name': 'retry_interval',
+          'label': _('Retry interval'),
+          'value': [],
+          'help_text': _('Wait time in minutes, default is 10'),
           'type': ''
      }
   }

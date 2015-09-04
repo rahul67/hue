@@ -46,22 +46,29 @@ function emptyStringIfNull(obj) {
 }
 
 var PersistedButtonsFilters = function (oSettings, aData, iDataIndex) {
-  var urlHashes = "";
 
-  var statusBtn = $("a.btn-status.active");
-  var statusFilter = true;
-  if (statusBtn.length > 0) {
+  var submittedBtn = $("a.btn-submitted.active");
+  var submittedByFilter = true;
+  if (submittedBtn.length > 0) {
     var statuses = [];
-    $.each(statusBtn, function () {
+    $.each(submittedBtn, function () {
       statuses.push($(this).attr("data-value"));
     });
-    var _statusColumn = aData[2];
-    if (typeof $(_statusColumn).attr("data-type") == "undefined") {
-      _statusColumn = aData[1];
+
+    var _submittedManually = aData[aData.length - 1];
+    if (statuses.length == 1) {
+      if (statuses[0] == 'COORDINATOR') {
+        submittedByFilter = !_submittedManually;
+      } else {
+        submittedByFilter = _submittedManually;
+      }
     }
-    statusFilter = _statusColumn.match(RegExp(statuses.join('|'), "i")) != null;
   }
 
+  return submittedByFilter;
+}
+
+var DateButtonsFilters = function (oSettings, aData, iDataIndex) {
   var dateBtn = $("a.btn-date.active");
   var dateFilter = true;
   if (dateBtn.length > 0) {
@@ -75,24 +82,5 @@ var PersistedButtonsFilters = function (oSettings, aData, iDataIndex) {
     }
     dateFilter = _dateColumn * 1000 >= minAge;
   }
-
-  var submittedBtn = $("a.btn-submitted.active");
-  var submittedByFilter = true;
-  if (submittedBtn.length > 0) {
-    var statuses = [];
-    $.each(submittedBtn, function () {
-      statuses.push($(this).attr("data-value"));
-    });
-
-    var _parentUrlColumn = aData[aData.length - 1];
-    if (statuses.length == 1) {
-      if (statuses[0] == 'COORDINATOR') {
-        submittedByFilter = _parentUrlColumn.indexOf('icon_oozie_coordinator') > -1;
-      } else {
-        submittedByFilter = _parentUrlColumn.indexOf('icon_oozie_coordinator') == -1;
-      }
-    }
-  }
-
-  return statusFilter && dateFilter && submittedByFilter;
+  return dateFilter;
 }

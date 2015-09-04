@@ -28,6 +28,7 @@ from django.utils.translation import ugettext as _
 from desktop.lib.rest.resource import Resource
 from desktop.lib.view_util import format_duration_in_millis
 
+from hadoop.conf import YARN_CLUSTERS
 from hadoop.yarn.clients import get_log_client
 
 from jobbrowser.models import format_unixtime_ms
@@ -55,6 +56,7 @@ class Application(object):
     setattr(self, 'jobId', jobid)
     setattr(self, 'jobId_short', re.sub('(application|job)_', '', self.jobId))
     setattr(self, 'jobName', self.name)
+    setattr(self, 'applicationType', self.applicationType)
     setattr(self, 'is_retired', False)
     setattr(self, 'maps_percent_complete', self.progress)
     setattr(self, 'reduces_percent_complete', self.progress)
@@ -66,22 +68,30 @@ class Application(object):
       finishTime = self.finishedTime
     setattr(self, 'durationInMillis', finishTime - self.startedTime)
     setattr(self, 'startTimeMs', self.startedTime)
-    setattr(self, 'startTimeFormatted',  format_unixtime_ms(self.startedTime))
-    setattr(self, 'finishTimeFormatted',  format_unixtime_ms(finishTime))
+    setattr(self, 'startTimeFormatted', format_unixtime_ms(self.startedTime))
+    setattr(self, 'finishTimeFormatted', format_unixtime_ms(finishTime))
     setattr(self, 'finishedMaps', None)
     setattr(self, 'desiredMaps', None)
     setattr(self, 'finishedReduces', None)
     setattr(self, 'desiredReduces', None)
     setattr(self, 'durationFormatted', format_duration_in_millis(self.durationInMillis))
 
+    for attr in ['preemptedResourceVCores', 'vcoreSeconds', 'memorySeconds', 'diagnostics']:
+      if not hasattr(self, attr):
+        setattr(self, attr, 'N/A')
+
     if not hasattr(self, 'acls'):
       setattr(self, 'acls', {})
+
+    # YARN returns a N/A url if it's not set.
+    if not hasattr(self, 'trackingUrl') or self.trackingUrl == 'http://N/A':
+      self.trackingUrl = None
 
   def kill(self):
     return self.api.kill(self.id)
 
   def filter_tasks(self, *args, **kwargs):
-    pass
+    return []
 
 
 class SparkJob(Application):
@@ -136,6 +146,22 @@ class Job(object):
 
     self._fixup()
 
+    # Set MAPS/REDUCES completion percentage
+    if hasattr(self, 'mapsTotal'):
+      self.desiredMaps = self.mapsTotal
+      if self.desiredMaps == 0:
+        self.maps_percent_complete = 0
+      else:
+        self.maps_percent_complete = int(round(float(self.finishedMaps) / self.desiredMaps * 100))
+
+    if hasattr(self, 'reducesTotal'):
+      self.desiredReduces = self.reducesTotal
+      if self.desiredReduces == 0:
+        self.reduces_percent_complete = 0
+      else:
+        self.reduces_percent_complete = int(round(float(self.finishedReduces) / self.desiredReduces * 100))
+
+
   def _fixup(self):
     jobid = self.id
 
@@ -150,10 +176,10 @@ class Job(object):
     setattr(self, 'finishTimeFormatted', format_unixtime_ms(self.finishTime))
     setattr(self, 'startTimeFormatted', format_unixtime_ms(self.startTime))
     setattr(self, 'finishedMaps', self.mapsCompleted)
-    setattr(self, 'desiredMaps', None)
+    setattr(self, 'desiredMaps', 0)
     setattr(self, 'finishedReduces', self.reducesCompleted)
-    setattr(self, 'desiredReduces', None)
-    setattr(self, 'applicationType', None)
+    setattr(self, 'desiredReduces', 0)
+    setattr(self, 'applicationType', 'MR2')
 
   def kill(self):
     return self.api.kill(self.id)
@@ -189,7 +215,8 @@ class Job(object):
   def filter_tasks(self, task_types=None, task_states=None, task_text=None):
     return [Task(self, task) for task in self.api.tasks(self.id).get('tasks', {}).get('task', [])
           if (not task_types or task['type'].lower() in task_types) and
-             (not task_states or task['state'].lower() in task_states)]
+             (not task_states or task['state'].lower() in task_states) and
+             (not task_text or task_text.lower() in str(task).lower())]
 
   @property
   def job_attempts(self):
@@ -215,9 +242,9 @@ class KilledJob(Job):
 
   def _fixup(self):
     if not hasattr(self, 'mapsCompleted'):
-      setattr(self, 'mapsCompleted', 1)
+      setattr(self, 'mapsCompleted', 0)
     if not hasattr(self, 'reducesCompleted'):
-      setattr(self, 'reducesCompleted', 1)
+      setattr(self, 'reducesCompleted', 0)
 
   @property
   def counters(self):
@@ -325,10 +352,16 @@ class Attempt:
     attempt = self.task.job.job_attempts['jobAttempt'][-1]
     log_link = attempt['logsLink']
     # Get MR task logs
-    if self.assignedContainerId:
-      log_link = log_link.replace(attempt['containerId'], self.assignedContainerId)
-    if hasattr(self, 'nodeHttpAddress'):
-      log_link = log_link.replace(attempt['nodeHttpAddress'].split(':')[0], self.nodeHttpAddress.split(':')[0])
+
+    # Don't hack up the urls if they've been migrated to the job history server.
+    for cluster in YARN_CLUSTERS.get().itervalues():
+      if log_link.startswith(cluster.HISTORY_SERVER_API_URL.get()):
+        break
+    else:
+      if self.assignedContainerId:
+        log_link = log_link.replace(attempt['containerId'], self.assignedContainerId)
+      if hasattr(self, 'nodeHttpAddress'):
+        log_link = log_link.replace(attempt['nodeHttpAddress'].split(':')[0], self.nodeHttpAddress.split(':')[0])
 
     for name in ('stdout', 'stderr', 'syslog'):
       link = '/%s/' % name
@@ -348,7 +381,7 @@ class Attempt:
           debug_info += '\nHTML Response: %s' % response
           LOGGER.error(debug_info)
         except:
-          pass
+          LOG.exception('failed to build debug info')
 
       logs.append(log)
 

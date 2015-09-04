@@ -7,7 +7,7 @@
         <groupId>com.cloudera.hue.livy</groupId>
         <artifactId>livy-main</artifactId>
         <relativePath>../pom.xml</relativePath>
-        <version>3.7.0-SNAPSHOT</version>
+        <version>3.9.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>livy-repl_2.10</artifactId>
@@ -25,6 +25,33 @@
             <groupId>org.scalatra</groupId>
             <artifactId>scalatra-scalatest_${scala.binary.version}</artifactId>
             <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.httpcomponents</groupId>
+                    <artifactId>httpclient</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.httpcomponents</groupId>
+                    <artifactId>httpcore</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpclient</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpcore</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>commons-codec</groupId>
+            <artifactId>commons-codec</artifactId>
         </dependency>
 
         <dependency>

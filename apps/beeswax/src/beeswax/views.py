@@ -41,8 +41,7 @@ from desktop.lib.django_util import login_notrequired, get_desktop_uri_prefix
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.lib.i18n import smart_unicode
 from desktop.models import Document
-
-from jobsub.parameterization import find_variables
+from desktop.lib.parameterization import find_variables
 
 import beeswax.forms
 import beeswax.design
@@ -187,9 +186,9 @@ def clone_design(request, design_id):
 
   copy = design.clone(request.user)
   copy.save()
-  copy_doc = design.doc.get().copy(owner=request.user)
-  copy.doc.all().delete()
-  copy.doc.add(copy_doc)
+
+  name = copy.name + '-copy'
+  design.doc.get().copy(content_object=copy, name=name, owner=request.user)
 
   messages.info(request, _('Copied design: %(name)s') % {'name': design.name})
 
@@ -218,11 +217,17 @@ def list_designs(request):
   querydict_query = _copy_prefix(prefix, request.GET)
   # Manually limit up the user filter.
   querydict_query[ prefix + 'type' ] = app_name
+  # Get search filter input if any
+  search_filter = request.GET.get('text', None)
+  if search_filter is not None:
+    querydict_query[ prefix + 'text' ] = search_filter
+
   page, filter_params = _list_designs(request.user, querydict_query, DEFAULT_PAGE_SIZE, prefix)
 
   return render('list_designs.mako', request, {
     'page': page,
     'filter_params': filter_params,
+    'prefix': prefix,
     'user': request.user,
     'designs_json': json.dumps([query.id for query in page.object_list])
   })
@@ -239,15 +244,20 @@ def list_trashed_designs(request):
   querydict_query = _copy_prefix(prefix, request.GET)
   # Manually limit up the user filter.
   querydict_query[ prefix + 'type' ] = app_name
+  # Get search filter input if any
+  search_filter = request.GET.get('text', None)
+  if search_filter is not None:
+    querydict_query[ prefix + 'text' ] = search_filter
+
   page, filter_params = _list_designs(user, querydict_query, DEFAULT_PAGE_SIZE, prefix, is_trashed=True)
 
   return render('list_trashed_designs.mako', request, {
     'page': page,
     'filter_params': filter_params,
+    'prefix': prefix,
     'user': request.user,
     'designs_json': json.dumps([query.id for query in page.object_list])
   })
-
 
 
 def my_queries(request):
@@ -493,6 +503,8 @@ def view_results(request, id, first_row=0):
       columns = results.data_table.cols()
 
   except Exception, ex:
+    LOG.exception('error fetching results')
+
     fetch_error = True
     error_message, log = expand_exception(ex, db, handle)
 
@@ -630,7 +642,6 @@ def query_done_cb(request, server_id):
 """
 Utils
 """
-
 def massage_columns_for_json(cols):
   massaged_cols = []
   for column in cols:
@@ -835,7 +846,7 @@ def _list_designs(user, querydict, page_size, prefix="", is_trashed=False):
   page = paginator.page(pagenum)
 
   # We need to pass the parameters back to the template to generate links
-  keys_to_copy = [ prefix + key for key in ('user', 'type', 'sort') ]
+  keys_to_copy = [ prefix + key for key in ('user', 'type', 'sort', 'text') ]
   filter_params = copy_query_dict(querydict, keys_to_copy)
 
   return page, filter_params

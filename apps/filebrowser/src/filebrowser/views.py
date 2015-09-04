@@ -47,6 +47,7 @@ from cStringIO import StringIO
 from gzip import GzipFile
 from avro import datafile, io
 
+from desktop import appmanager
 from desktop.lib import i18n, paginator
 from desktop.lib.conf import coerce_bool
 from desktop.lib.django_util import make_absolute, render, render_json, format_preserving_redirect
@@ -57,6 +58,8 @@ from hadoop.fs.exceptions import WebHdfsException
 from hadoop.fs.fsutils import do_newfile_save, do_overwrite_save
 
 from filebrowser.conf import MAX_SNAPPY_DECOMPRESSION_SIZE
+from filebrowser.conf import SHOW_DOWNLOAD_BUTTON
+from filebrowser.conf import SHOW_UPLOAD_BUTTON
 from filebrowser.lib.archives import archive_factory
 from filebrowser.lib.rwx import filetype, rwx
 from filebrowser.lib import xxd
@@ -171,8 +174,9 @@ def view(request, path):
         msg = _("Cannot access: %(path)s. ") % {'path': escape(path)}
         if "Connection refused" in e.message:
             msg += _(" The HDFS REST service is not available. ")
-        if request.user.is_superuser and not request.user == request.fs.superuser:
-            msg += _(' Note: You are a Hue admin but not a HDFS superuser (which is "%(superuser)s").') % {'superuser': request.fs.superuser}
+        if request.user.is_superuser and not _is_hdfs_superuser(request):
+            msg += _(' Note: you are a Hue admin but not a HDFS superuser, "%(superuser)s" or part of HDFS supergroup, "%(supergroup)s".') \
+                % {'superuser': request.fs.superuser, 'supergroup': request.fs.supergroup}
         if request.is_ajax():
           exception = {
             'error': msg
@@ -233,9 +237,9 @@ def edit(request, path, form=None):
         path=path,
         filename=os.path.basename(path),
         dirname=os.path.dirname(path),
-        breadcrumbs = parse_breadcrumbs(path))
+        breadcrumbs = parse_breadcrumbs(path),
+        show_download_button = SHOW_DOWNLOAD_BUTTON.get())
     return render("edit.mako", request, data)
-
 
 def save_file(request):
     """
@@ -315,7 +319,9 @@ def listdir(request, path, chooser):
         'groups': request.user.username == request.fs.superuser and [str(x) for x in Group.objects.values_list('name', flat=True)] or [],
         'users': request.user.username == request.fs.superuser and [str(x) for x in User.objects.values_list('username', flat=True)] or [],
         'superuser': request.fs.superuser,
-        'show_upload': (request.REQUEST.get('show_upload') == 'false' and (False,) or (True,))[0]
+        'show_upload': (request.REQUEST.get('show_upload') == 'false' and (False,) or (True,))[0],
+        'show_download_button': SHOW_DOWNLOAD_BUTTON.get(),
+        'show_upload_button': SHOW_UPLOAD_BUTTON.get()
     }
 
     stats = request.fs.listdir_stats(path)
@@ -424,6 +430,7 @@ def listdir_paged(request, path):
 
     page.object_list = [ _massage_stats(request, s) for s in shown_stats ]
 
+    is_fs_superuser = _is_hdfs_superuser(request)
     data = {
         'path': path,
         'breadcrumbs': breadcrumbs,
@@ -438,12 +445,15 @@ def listdir_paged(request, path):
         'cwd_set': True,
         'file_filter': 'any',
         'current_dir_path': path,
-        'is_fs_superuser': request.user.username == request.fs.superuser,
-        'is_superuser': request.user.username == request.fs.superuser,
-        'groups': request.user.username == request.fs.superuser and [str(x) for x in Group.objects.values_list('name', flat=True)] or [],
-        'users': request.user.username == request.fs.superuser and [str(x) for x in User.objects.values_list('username', flat=True)] or [],
+        'is_fs_superuser': is_fs_superuser,
+        'groups': is_fs_superuser and [str(x) for x in Group.objects.values_list('name', flat=True)] or [],
+        'users': is_fs_superuser and [str(x) for x in User.objects.values_list('username', flat=True)] or [],
         'superuser': request.fs.superuser,
-        'is_sentry_managed': request.fs.is_sentry_managed(path)
+        'supergroup': request.fs.supergroup,
+        'is_sentry_managed': request.fs.is_sentry_managed(path),
+        'apps': appmanager.get_apps_dict(request.user).keys(),
+        'show_download_button': SHOW_DOWNLOAD_BUTTON.get(),
+        'show_upload_button': SHOW_UPLOAD_BUTTON.get()
     }
     return render('listdir.mako', request, data)
 
@@ -614,6 +624,7 @@ def display(request, path):
         data['view']['masked_binary_data'] = is_binary
 
     data['breadcrumbs'] = parse_breadcrumbs(path)
+    data['show_download_button'] = SHOW_DOWNLOAD_BUTTON.get()
 
     return render("display.mako", request, data)
 
@@ -716,7 +727,7 @@ def _read_avro(fhandle, path, offset, length, stats):
 
         contents = "".join(contents_list)
     except:
-        logging.warn("Could not read avro file at %s" % path, exc_info=True)
+        logging.exception("Could not read avro file at %s" % path)
         raise PopupException(_("Failed to read Avro file."))
     return contents
 
@@ -728,7 +739,7 @@ def _read_parquet(fhandle, path, offset, length, stats):
         dumped_data.seek(offset)
         return dumped_data.read()
     except:
-        logging.warn("Could not read parquet file at %s" % path, exc_info=True)
+        logging.exception("Could not read parquet file at %s" % path)
         raise PopupException(_("Failed to read Parquet file."))
 
 
@@ -739,7 +750,7 @@ def _read_gzip(fhandle, path, offset, length, stats):
     try:
         contents = GzipFile('', 'r', 0, StringIO(fhandle.read())).read(length)
     except:
-        logging.warn("Could not decompress file at %s" % path, exc_info=True)
+        logging.exception("Could not decompress file at %s" % path)
         raise PopupException(_("Failed to decompress file."))
     return contents
 
@@ -750,7 +761,7 @@ def _read_simple(fhandle, path, offset, length, stats):
         fhandle.seek(offset)
         contents = fhandle.read(length)
     except:
-        logging.warn("Could not read file at %s" % path, exc_info=True)
+        logging.exception("Could not read file at %s" % path)
         raise PopupException(_("Failed to read file."))
     return contents
 
@@ -776,6 +787,7 @@ def detect_snappy(contents):
         import snappy
         return snappy.isValidCompressed(contents)
     except:
+        logging.exception('failed to detect snappy')
         return False
 
 
@@ -791,7 +803,10 @@ def snappy_installed():
     try:
         import snappy
         return True
+    except ImportError:
+        return False
     except:
+        logging.exception('failed to verify if snappy is installed')
         return False
 
 
@@ -944,9 +959,9 @@ def generic_op(form_class, request, op, parameter_names, piggyback=None, templat
                 op(*args)
             except (IOError, WebHdfsException), e:
                 msg = _("Cannot perform operation.")
-                if request.user.is_superuser and not request.user == request.fs.superuser:
-                    msg += _(' Note: you are a Hue admin but not a HDFS superuser (which is "%(superuser)s").') \
-                           % {'superuser': request.fs.superuser}
+                if request.user.is_superuser and not _is_hdfs_superuser(request):
+                    msg += _(' Note: you are a Hue admin but not a HDFS superuser, "%(superuser)s" or part of HDFS supergroup, "%(supergroup)s".') \
+                           % {'superuser': request.fs.superuser, 'supergroup': request.fs.supergroup}
                 raise PopupException(msg, detail=e)
             if next:
                 logging.debug("Next: %s" % next)
@@ -1119,7 +1134,7 @@ def upload_file(request):
             resp = _upload_file(request)
             response.update(resp)
         except Exception, ex:
-            response['data'] = str(ex)
+            response['data'] = str(ex).split('\n', 1)[0]
             hdfs_file = request.FILES.get('hdfs_file')
             if hdfs_file:
                 hdfs_file.remove()
@@ -1244,7 +1259,13 @@ def _upload_archive(request):
                 if not temp_path:
                     raise PopupException(_('Could not extract contents of file.'))
                 # Move the file to where it belongs
-                dest = dest[:-7]
+                dest = dest[:-7] if dest.lower().endswith('.tar.gz') else dest[:-4]
+            elif dest.lower().endswith('.bz2') or dest.lower().endswith('.bzip2'):
+              temp_path = archive_factory(uploaded_file, 'bz2').extract()
+              if not temp_path:
+                  raise PopupException(_('Could not extract contents of file.'))
+                # Move the file to where it belongs
+              dest = dest[:-6] if dest.lower().endswith('.bzip2') else dest[:-4]
             else:
                 raise PopupException(_('Could not interpret archive type.'))
 
@@ -1290,6 +1311,7 @@ def status(request):
 def location_to_url(location, strict=True):
     """
     If possible, returns a file browser URL to the location.
+    Prunes HDFS URI to path.
     Location is a URI, if strict is True.
 
     Python doesn't seem to have a readily-available URI-comparison
@@ -1301,7 +1323,11 @@ def location_to_url(location, strict=True):
     if strict and not split_path[1] or not split_path[2]:
       # No netloc not full url or no URL
       return None
-    return reverse("filebrowser.views.view", kwargs=dict(path=split_path[2]))
+    path = location
+    if split_path[0] == 'hdfs':
+      path = split_path[2]
+    return reverse("filebrowser.views.view", kwargs=dict(path=path))
+
 
 def truncate(toTruncate, charsToKeep=50):
     """
@@ -1312,3 +1338,7 @@ def truncate(toTruncate, charsToKeep=50):
         return truncated
     else:
         return toTruncate
+
+
+def _is_hdfs_superuser(request):
+  return request.user.username == request.fs.superuser or request.user.groups.filter(name__exact=request.fs.supergroup).exists()

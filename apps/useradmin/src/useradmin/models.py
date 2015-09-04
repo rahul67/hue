@@ -93,6 +93,8 @@ class UserProfile(models.Model):
   user = models.ForeignKey(auth_models.User, unique=True)
   home_directory = models.CharField(editable=True, max_length=1024, null=True)
   creation_method = models.CharField(editable=True, null=False, max_length=64, default=CreationMethod.HUE)
+  first_login = models.BooleanField(default=True, verbose_name=_t('First Login'),
+                                   help_text=_t('If this is users first login.'))
 
   def get_groups(self):
     return self.user.groups.all()
@@ -163,7 +165,7 @@ def create_profile_for_user(user):
     p.save()
     return p
   except:
-    LOG.debug("Failed to automatically create user profile.", exc_info=True)
+    LOG.exception("Failed to automatically create user profile.")
     return None
 
 class LdapGroup(models.Model):
@@ -203,12 +205,14 @@ class HuePermission(models.Model):
 
 def get_default_user_group(**kwargs):
   default_user_group = useradmin.conf.DEFAULT_USER_GROUP.get()
-  if default_user_group is not None:
-    group, created = auth_models.Group.objects.get_or_create(name=default_user_group)
-    if created:
-      group.save()
+  if default_user_group is None:
+    return None
 
-    return group
+  group, created = auth_models.Group.objects.get_or_create(name=default_user_group)
+  if created:
+    group.save()
+
+  return group
 
 def update_app_permissions(**kwargs):
   """
@@ -236,6 +240,7 @@ def update_app_permissions(**kwargs):
       for dp in HuePermission.objects.all():
         current.setdefault(dp.app, {})[dp.action] = dp
     except:
+      LOG.exception('failed to get permissions')
       return
 
     updated = 0
@@ -291,18 +296,18 @@ def install_sample_user():
   Setup the de-activated sample user with a certain id. Do not create a user profile.
   """
 
-  try:
-    user = auth_models.User.objects.get(username=SAMPLE_USERNAME)
-  except auth_models.User.DoesNotExist:
-    try:
-      user = auth_models.User.objects.create(username=SAMPLE_USERNAME, password='!', is_active=False, is_superuser=False, id=1100713, pk=1100713)
-      LOG.info('Installed a user called "%s"' % (SAMPLE_USERNAME,))
-    except Exception, e:
-      LOG.info('Sample user race condition: %s' % e)
-      user = auth_models.User.objects.get(username=SAMPLE_USERNAME)
-      LOG.info('Sample user race condition, got: %s' % user)
+  user, created = auth_models.User.objects.get_or_create(
+      username=SAMPLE_USERNAME,
+      password='!',
+      is_active=False,
+      is_superuser=False,
+      id=1100713,
+      pk=1100713)
 
-  fs = cluster.get_hdfs()
-  fs.do_as_user(SAMPLE_USERNAME, fs.create_home_dir)
+  if created:
+    LOG.info('Installed a user called "%s"' % (SAMPLE_USERNAME,))
+
+    fs = cluster.get_hdfs()
+    fs.do_as_user(SAMPLE_USERNAME, fs.create_home_dir)
 
   return user

@@ -17,7 +17,6 @@
 
 import json
 import logging
-import uuid
 
 from django.core.urlresolvers import reverse
 from django.forms.formsets import formset_factory
@@ -151,20 +150,12 @@ def copy_workflow(request):
 
   for job in jobs:
     doc2 = Document2.objects.get(type='oozie-workflow2', id=job['id'])
+    doc = doc2.doc.get()
 
     name = doc2.name + '-copy'
-    copy_doc = doc2.doc.get().copy(name=name, owner=request.user)
+    doc2 = doc2.copy(name=name, owner=request.user)
 
-    doc2.pk = None
-    doc2.id = None
-    doc2.uuid = str(uuid.uuid4())
-    doc2.name = name
-    doc2.owner = request.user
-    doc2.save()
-
-    doc2.doc.all().delete()
-    doc2.doc.add(copy_doc)
-    doc2.save()
+    doc.copy(content_object=doc2, name=name, owner=request.user)
 
     workflow = Workflow(document=doc2)
     workflow.update_name(name)
@@ -217,13 +208,15 @@ def save_workflow(request):
 
   workflow_doc.update_data({'workflow': workflow})
   workflow_doc.update_data({'layout': layout})
-  workflow_doc.name = workflow['name']
-  workflow_doc.description = workflow['properties']['description']
+  workflow_doc1 = workflow_doc.doc.get()
+  workflow_doc.name = workflow_doc1.name = workflow['name']
+  workflow_doc.description = workflow_doc1.description = workflow['properties']['description']
   workflow_doc.save()
+  workflow_doc1.save()
 
   response['status'] = 0
   response['id'] = workflow_doc.id
-  response['doc1_id'] = workflow_doc.doc.get().id
+  response['doc1_id'] = workflow_doc1.id
   response['message'] = _('Page saved !')
 
   return JsonResponse(response)
@@ -347,9 +340,12 @@ def submit_workflow(request, doc_id):
 
     if params_form.is_valid():
       mapping = dict([(param['name'], param['value']) for param in params_form.cleaned_data])
+      mapping['dryrun'] = request.POST.get('dryrun_checkbox') == 'on'
 
-      job_id = _submit_workflow(request.user, request.fs, request.jt, workflow, mapping)
-
+      try:
+        job_id = _submit_workflow(request.user, request.fs, request.jt, workflow, mapping)
+      except Exception, e:
+        raise PopupException(_('Workflow submission failed'), detail=smart_str(e))
       request.info(_('Workflow submitted'))
       return redirect(reverse('oozie:list_oozie_workflow', kwargs={'job_id': job_id}))
     else:
@@ -362,7 +358,8 @@ def submit_workflow(request, doc_id):
     popup = render('editor2/submit_job_popup.mako', request, {
                      'params_form': params_form,
                      'name': workflow.name,
-                     'action': reverse('oozie:editor_submit_workflow', kwargs={'doc_id': workflow.id})
+                     'action': reverse('oozie:editor_submit_workflow', kwargs={'doc_id': workflow.id}),
+                     'show_dryrun': True
                    }, force_template=True).content
     return JsonResponse(popup, safe=False)
 
@@ -459,19 +456,12 @@ def copy_coordinator(request):
 
   for job in jobs:
     doc2 = Document2.objects.get(type='oozie-coordinator2', id=job['id'])
+    doc = doc2.doc.get()
 
     name = doc2.name + '-copy'
-    copy_doc = doc2.doc.get().copy(name=name, owner=request.user)
+    doc2 = doc2.copy(name=name, owner=request.user)
 
-    doc2.pk = None
-    doc2.id = None
-    doc2.uuid = str(uuid.uuid4())
-    doc2.name = name
-    doc2.owner = request.user
-    doc2.save()
-
-    doc2.doc.all().delete()
-    doc2.doc.add(copy_doc)
+    doc.copy(content_object=doc2, name=name, owner=request.user)
 
     coordinator_data = Coordinator(document=doc2).get_data_for_json()
     coordinator_data['name'] = name
@@ -502,10 +492,12 @@ def save_coordinator(request):
       doc.doc.get().can_read_or_exception(request.user)
     coordinator_doc.dependencies = dependencies
 
+  coordinator_doc1 = coordinator_doc.doc.get()
   coordinator_doc.update_data(coordinator_data)
-  coordinator_doc.name = coordinator_data['name']
-  coordinator_doc.description = coordinator_data['properties']['description']
+  coordinator_doc.name = coordinator_doc1.name = coordinator_data['name']
+  coordinator_doc.description = coordinator_doc1.description = coordinator_data['properties']['description']
   coordinator_doc.save()
+  coordinator_doc1.save()
 
   response['status'] = 0
   response['id'] = coordinator_doc.id
@@ -552,6 +544,7 @@ def submit_coordinator(request, doc_id):
 
     if params_form.is_valid():
       mapping = dict([(param['name'], param['value']) for param in params_form.cleaned_data])
+      mapping['dryrun'] = request.POST.get('dryrun_checkbox') == 'on'
       job_id = _submit_coordinator(request, coordinator, mapping)
 
       request.info(_('Coordinator submitted.'))
@@ -566,7 +559,8 @@ def submit_coordinator(request, doc_id):
   popup = render('editor2/submit_job_popup.mako', request, {
                  'params_form': params_form,
                  'name': coordinator.name,
-                 'action': reverse('oozie:editor_submit_coordinator',  kwargs={'doc_id': coordinator.id})
+                 'action': reverse('oozie:editor_submit_coordinator',  kwargs={'doc_id': coordinator.id}),
+                 'show_dryrun': True
                 }, force_template=True).content
   return JsonResponse(popup, safe=False)
 
@@ -654,10 +648,12 @@ def save_bundle(request):
       doc.doc.get().can_read_or_exception(request.user)
     bundle_doc.dependencies = dependencies
 
+  bundle_doc1 = bundle_doc.doc.get()
   bundle_doc.update_data(bundle_data)
-  bundle_doc.name = bundle_data['name']
-  bundle_doc.description = bundle_data['properties']['description']
+  bundle_doc.name = bundle_doc1.name = bundle_data['name']
+  bundle_doc.description = bundle_doc1.description = bundle_data['properties']['description']
   bundle_doc.save()
+  bundle_doc1.save()
 
   response['status'] = 0
   response['id'] = bundle_doc.id
@@ -675,19 +671,12 @@ def copy_bundle(request):
 
   for job in jobs:
     doc2 = Document2.objects.get(type='oozie-bundle2', id=job['id'])
+    doc = doc2.doc.get()
 
     name = doc2.name + '-copy'
-    copy_doc = doc2.doc.get().copy(name=name, owner=request.user)
+    doc2 = doc2.copy(name=name, owner=request.user)
 
-    doc2.pk = None
-    doc2.id = None
-    doc2.uuid = str(uuid.uuid4())
-    doc2.name = name
-    doc2.owner = request.user
-    doc2.save()
-
-    doc2.doc.all().delete()
-    doc2.doc.add(copy_doc)
+    doc.copy(content_object=doc2, name=name, owner=request.user)
 
     bundle_data = Bundle(document=doc2).get_data_for_json()
     bundle_data['name'] = name
@@ -724,7 +713,8 @@ def submit_bundle(request, doc_id):
   popup = render('editor2/submit_job_popup.mako', request, {
                  'params_form': params_form,
                  'name': bundle.name,
-                 'action': reverse('oozie:editor_submit_bundle',  kwargs={'doc_id': bundle.id})
+                 'action': reverse('oozie:editor_submit_bundle',  kwargs={'doc_id': bundle.id}),
+                 'show_dryrun': False
                 }, force_template=True).content
   return JsonResponse(popup, safe=False)
 

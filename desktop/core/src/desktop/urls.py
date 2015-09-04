@@ -15,6 +15,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import absolute_import
+
 import logging
 import os
 import re
@@ -28,16 +30,22 @@ import re
 # this file has been loaded after `desktop.settings` has been loaded.
 import desktop.monkey_patches
 
+import desktop.lib.metrics.file_reporter
+desktop.lib.metrics.file_reporter.start_file_reporter()
+
 from django.conf import settings
 from django.conf.urls import include, patterns
 from django.conf.urls.static import static
 from django.contrib import admin
 
 from desktop import appmanager
+from desktop import metrics
+from desktop.conf import METRICS
 
 # Django expects handler404 and handler500 to be defined.
 # django.conf.urls provides them. But we want to override them.
 # Also see http://code.djangoproject.com/ticket/5350
+handler403 = 'desktop.views.serve_403_error'
 handler404 = 'desktop.views.serve_404_error'
 handler500 = 'desktop.views.serve_500_error'
 
@@ -93,16 +101,23 @@ dynamic_patterns += patterns('desktop.api',
 
 dynamic_patterns += patterns('desktop.api2',
   (r'^desktop/api2/doc/get$', 'get_document'),
+  (r'^desktop/api2/doc/export$', 'export_documents'),
+  (r'^desktop/api2/doc/import$', 'import_documents'),
 )
 
 dynamic_patterns += patterns('useradmin.views',
   (r'^desktop/api/users/autocomplete', 'list_for_autocomplete'),
 )
 
+# Metrics specific
+if METRICS.ENABLE_WEB_METRICS.get():
+  dynamic_patterns += patterns('',
+    (r'^desktop/metrics/', include('desktop.lib.metrics.urls'))
+  )
+
 dynamic_patterns += patterns('',
   (r'^admin/', include(admin.site.urls)),
 )
-
 
 static_patterns = []
 

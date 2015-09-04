@@ -20,7 +20,6 @@ import logging
 import re
 import csv
 
-from django.core.urlresolvers import reverse
 from django.utils.translation import ugettext as _
 from django.utils.encoding import smart_str
 
@@ -28,7 +27,7 @@ from desktop.lib import thrift_util
 from desktop.lib.exceptions_renderable import PopupException
 
 from hbase import conf
-from hbase.hbase_site import get_server_principal, get_server_authentication, is_using_thrift_ssl, is_using_thrift_http, is_impersonation_enabled
+from hbase.hbase_site import get_server_principal, get_server_authentication, is_using_thrift_ssl, is_using_thrift_http
 from hbase.server.hbase_lib import get_thrift_type, get_client_type
 
 
@@ -63,6 +62,7 @@ class HbaseApi(object):
     try:
       full_config = json.loads(conf.HBASE_CLUSTERS.get().replace("'", "\""))
     except:
+      LOG.exception('failed to load the HBase clusters')
       full_config = [conf.HBASE_CLUSTERS.get()] #hack cause get() is weird
 
     for config in full_config:
@@ -84,7 +84,7 @@ class HbaseApi(object):
         if cluster["name"] == name:
           return cluster
     except:
-      pass
+      LOG.exception('failed to get the cluster %s' % name)
     raise PopupException(_("Cluster by the name of %s does not exist in configuration.") % name)
 
   def connectCluster(self, name):
@@ -199,10 +199,11 @@ class HbaseApi(object):
     mutations = []
     Mutation = get_thrift_type('Mutation')
     for column in data.keys():
-      mutations.append(Mutation(column=smart_str(column), value=smart_str(data[column]))) # must use str for API, does thrift coerce by itself?
+      value = smart_str(data[column]) if data[column] is not None else None
+      mutations.append(Mutation(column=smart_str(column), value=value)) # must use str for API, does thrift coerce by itself?
     return client.mutateRow(tableName, smart_str(row), mutations, None, doas=self.user.username)
 
-  def putColumn(self, cluster, tableName, row, column, value):
+  def putColumn(self, cluster, tableName, row, column, value=None):
     return self.putRow(cluster, tableName, smart_str(row), {column: value})
 
   def putUpload(self, cluster, tableName, row, column, value):

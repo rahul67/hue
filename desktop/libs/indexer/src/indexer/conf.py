@@ -15,12 +15,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import os
 from urlparse import urlparse
 
 from django.utils.translation import ugettext_lazy as _t
 
 from desktop.lib.conf import Config
+
+LOG = logging.getLogger(__name__)
 
 
 def solrctl():
@@ -46,11 +49,14 @@ def zkensemble():
     if clusters['default'].HOST_PORTS.get() != 'localhost:2181':
       return '%s/solr' % clusters['default'].HOST_PORTS.get()
   except:
-    pass
+    LOG.exception('failed to get zookeeper ensemble')
 
-  from search.conf import SOLR_URL
-  parsed = urlparse(SOLR_URL.get())
-  return "%s:2181/solr" % (parsed.hostname or 'localhost')
+  try:
+    from search.conf import SOLR_URL
+    parsed = urlparse(SOLR_URL.get())
+    return "%s:2181/solr" % (parsed.hostname or 'localhost')
+  except:
+    LOG.exception('failed to get solr url')
 
 
 
@@ -79,7 +85,8 @@ SOLRCTL_PATH = Config(
   type=str,
   dynamic_default=solrctl)
 
-SOLR_ZK_ENSEMBLE  = Config(
+# Deprecated
+SOLR_ZK_ENSEMBLE = Config(
   key="solr_zk_ensemble",
   help=_t("Zookeeper ensemble."),
   type=str,

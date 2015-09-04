@@ -18,14 +18,13 @@
 
 import logging
 
-from django.contrib.auth.models import User
 from django.db.models import Q
-from django.utils.translation import ugettext as _
 
+from desktop.models import Document2, Document, SAMPLE_USERNAME
 from libsolr.api import SolrApi
 
 from search.conf import SOLR_URL
-from search.models import Collection
+from search.models import Collection2
 
 
 LOG = logging.getLogger(__name__)
@@ -39,24 +38,40 @@ class SearchController(object):
     self.user = user
 
   def get_search_collections(self):
-    if self.user.is_superuser:
-      return Collection.objects.all().order_by('-id')
-    else:
-      return Collection.objects.filter(Q(owner=self.user) | Q(enabled=True)).order_by('-id')
+    return [d.content_object for d in Document.objects.get_docs(self.user, Document2, extra='search-dashboard').order_by('-id')]
 
   def get_shared_search_collections(self):
-    return Collection.objects.filter(Q(owner=self.user) | Q(enabled=True, owner__in=User.objects.filter(is_superuser=True)) | Q(id__in=[20000000, 20000001, 20000002, 20000003])).order_by('-id')
+    # Those are the ones appearing in the menu
+    docs = Document.objects.filter(Q(owner=self.user) | Q(owner__username=SAMPLE_USERNAME), extra='search-dashboard')
+
+    return [d.content_object for d in docs.order_by('-id')]
 
   def get_owner_search_collections(self):
     if self.user.is_superuser:
-      return Collection.objects.all()
+      docs = Document.objects.filter(extra='search-dashboard')
     else:
-      return Collection.objects.filter(Q(owner=self.user))
+      docs = Document.objects.filter(extra='search-dashboard', owner=self.user)
+
+    return [d.content_object for d in docs.order_by('-id')]
+
+  def get_icon(self, name):
+    if name == 'Twitter':
+      return 'search/art/icon_twitter_48.png'
+    elif name == 'Yelp Reviews':
+      return 'search/art/icon_yelp_48.png'
+    elif name == 'Web Logs':
+      return 'search/art/icon_logs_48.png'
+    else:
+      return 'search/art/icon_search_48.png'
 
   def delete_collections(self, collection_ids):
     result = {'status': -1, 'message': ''}
     try:
-      self.get_owner_search_collections().filter(id__in=collection_ids).delete()
+      for doc2 in self.get_owner_search_collections():
+        if doc2.id in collection_ids:
+          doc = doc2.doc.get()
+          doc.delete()
+          doc2.delete()
       result['status'] = 0
     except Exception, e:
       LOG.warn('Error deleting collection: %s' % e)
@@ -67,30 +82,24 @@ class SearchController(object):
   def copy_collections(self, collection_ids):
     result = {'status': -1, 'message': ''}
     try:
-      for collection in self.get_shared_search_collections().filter(id__in=collection_ids):
-        copy = collection
-        copy.label += _(' (Copy)')
-        copy.id = copy.pk = None
+      for doc2 in self.get_shared_search_collections():
+        if doc2.id in collection_ids:
+          doc2 = Document2.objects.get(uuid=doc2.uuid)
+          doc = doc2.doc.get()
 
-        facets = copy.facets
-        facets.id = None
-        facets.save()
-        copy.facets = facets
+          name = doc2.name + '-copy'
+          doc2 = doc2.copy(name=name, owner=self.user)
 
-        result_ = copy.result
-        result_.id = None
-        result_.save()
-        copy.result = result_
+          doc.copy(content_object=doc2, name=name, owner=self.user)
 
-        sorting = copy.sorting
-        sorting.id = None
-        sorting.save()
-        copy.sorting = sorting
+          collection = Collection2(self.user, document=doc2)
+          collection.data['collection']['label'] = name
 
-        copy.save()
+          doc2.update_data({'collection': collection.data['collection']})
+          doc2.save()
       result['status'] = 0
     except Exception, e:
-      LOG.warn('Error copying collection: %s' % e)
+      LOG.exception('Error copying collection')
       result['message'] = unicode(str(e), "utf8")
 
     return result
@@ -111,14 +120,18 @@ class SearchController(object):
     try:
       indexes = self.get_solr_collection().keys()
     except:
-      pass
+      LOG.exception('failed to get indexes')
 
     try:
       indexes += SolrApi(SOLR_URL.get(), self.user).aliases().keys()
     except:
-      pass
+      LOG.exception('failed to get index aliases')
 
     if show_all or not indexes:
       return indexes + SolrApi(SOLR_URL.get(), self.user).cores().keys()
     else:
       return indexes
+
+
+def can_edit_index(user):
+  return user.is_superuser

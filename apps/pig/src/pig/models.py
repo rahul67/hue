@@ -81,7 +81,13 @@ class PigScript(Document):
   @property
   def use_hcatalog(self):
     script = self.dict['script']
-    return 'org.apache.hcatalog.pig.HCatStorer' in script or 'org.apache.hcatalog.pig.HCatLoader' in script
+    return ('org.apache.hcatalog.pig.HCatStorer' in script or 'org.apache.hcatalog.pig.HCatLoader' in script) or \
+        ('org.apache.hive.hcatalog.pig.HCatLoader' in script or 'org.apache.hive.hcatalog.pig.HCatStorer' in script) # New classes
+
+  @property
+  def use_hbase(self):
+    script = self.dict['script']
+    return 'org.apache.pig.backend.hadoop.hbase.HBaseStorage' in script
 
 
 def create_or_update_script(id, name, script, user, parameters, resources, hadoopProperties, is_design=True):
@@ -154,9 +160,9 @@ def hdfs_link(url):
     path = Hdfs.urlsplit(url)[2]
     if path:
       if path.startswith(posixpath.sep):
-        return "/filebrowser/view" + path
+        return "/filebrowser/view=" + path
       else:
-        return "/filebrowser/home_relative_view/" + path
+        return "/filebrowser/home_relative_view=/" + path
     else:
       return url
   else:

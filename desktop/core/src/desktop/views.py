@@ -15,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import StringIO
 import json
 import logging
 import os
@@ -41,10 +42,11 @@ import desktop.log.log_buffer
 from desktop.api import massaged_tags_for_json, massaged_documents_for_json,\
   _get_docs
 from desktop.lib import django_mako
-from desktop.lib.conf import GLOBAL_CONFIG
-from desktop.lib.django_util import login_notrequired, render_json, render
+from desktop.lib.conf import GLOBAL_CONFIG, BoundConfig
+from desktop.lib.django_util import JsonResponse, login_notrequired, render_json, render
 from desktop.lib.i18n import smart_str
 from desktop.lib.paths import get_desktop_root
+from desktop.lib.thread_util import dump_traceback
 from desktop.log.access import access_log_level, access_warn
 from desktop.models import UserPreferences, Settings
 from desktop import appmanager
@@ -106,7 +108,7 @@ def download_log_view(request):
         tmp = tempfile.NamedTemporaryFile()
         log_tmp = tempfile.NamedTemporaryFile("w+t")
         for l in h.buf:
-          log_tmp.write(smart_str(l) + '\n')
+          log_tmp.write(smart_str(l, errors='replace') + '\n')
         # This is not just for show - w/out flush, we often get truncated logs
         log_tmp.flush()
         t = time.time()
@@ -124,7 +126,7 @@ def download_log_view(request):
         response['Content-Length'] = length
         return response
       except Exception, e:
-        logging.exception("Couldn't construct zip file to write logs to: %s") % e
+        LOG.exception("Couldn't construct zip file to write logs")
         return log_view(request)
 
   return render_to_response("logs.mako", dict(log=[_("No logs found.")]))
@@ -225,14 +227,10 @@ def threads(request):
   if not request.user.is_superuser:
     return HttpResponse(_("You must be a superuser."))
 
-  out = []
-  for thread_id, stack in sys._current_frames().iteritems():
-    out.append("Thread id: %s" % thread_id)
-    for filename, lineno, name, line in traceback.extract_stack(stack):
-      out.append("  %-20s %s(%d)" % (name, filename, lineno))
-      out.append("    %-80s" % (line))
-    out.append("")
-  return HttpResponse("\n".join(out), content_type="text/plain")
+  out = StringIO.StringIO()
+  dump_traceback(file=out)
+
+  return HttpResponse(out.getvalue(), content_type="text/plain")
 
 @access_log_level(logging.WARN)
 def memory(request):
@@ -285,6 +283,16 @@ def index(request):
     return redirect(reverse('about:index'))
   else:
     return home(request)
+
+def csrf_failure(request, reason=None):
+  """Registered handler for CSRF."""
+  access_warn(request, reason)
+  return render("403_csrf.mako", request, dict(uri=request.build_absolute_uri()), status=403)
+
+def serve_403_error(request, *args, **kwargs):
+  """Registered handler for 403. We just return a simple error"""
+  access_warn(request, "403 access forbidden")
+  return render("403.mako", request, dict(uri=request.build_absolute_uri()), status=403)
 
 def serve_404_error(request, *args, **kwargs):
   """Registered handler for 404. We just return a simple error"""
@@ -372,11 +380,15 @@ def commonheader(title, section, user, padding="90px"):
     'section': section,
     'padding': padding,
     'user': user,
-    'is_demo': desktop.conf.DEMO_ENABLED.get()
+    'is_demo': desktop.conf.DEMO_ENABLED.get(),
+    'is_ldap_setup': 'desktop.auth.backend.LdapBackend' in desktop.conf.AUTH.BACKEND.get()
   })
 
 def commonshare():
   return django_mako.render_to_string("common_share.mako", {})
+
+def commonimportexport(request):
+  return django_mako.render_to_string("common_import_export.mako", {'request': request})
 
 def commonfooter(messages=None):
   """
@@ -430,7 +442,16 @@ def _get_config_errors(request, cache=True):
         continue
 
       try:
-        error_list.extend(validator(request.user))
+        for confvar, error in validator(request.user):
+          error = {
+            'name': confvar if isinstance(confvar, str) else confvar.get_fully_qualifying_key(),
+            'message': error,
+          }
+
+          if isinstance(confvar, BoundConfig):
+            error['value'] = confvar.get()
+
+          error_list.append(error)
       except Exception, ex:
         LOG.exception("Error in config validation by %s: %s" % (module.nice_name, ex))
     _CONFIG_ERROR_LIST = error_list
@@ -442,12 +463,15 @@ def check_config(request):
   if not request.user.is_superuser:
     return HttpResponse(_("You must be a superuser."))
 
-  conf_dir = os.path.realpath(os.getenv("HUE_CONF_DIR", get_desktop_root("conf")))
-  return render('check_config.mako', request, {
-                  'error_list': _get_config_errors(request, cache=False),
-                  'conf_dir': conf_dir
-              },
-              force_template=True)
+  context = {
+    'conf_dir': os.path.realpath(os.getenv("HUE_CONF_DIR", get_desktop_root("conf"))),
+    'error_list': _get_config_errors(request, cache=False),
+  }
+
+  if request.GET.get('format') == 'json':
+    return JsonResponse(context)
+  else:
+    return render('check_config.mako', request, context, force_template=True)
 
 
 def check_config_ajax(request):
@@ -463,3 +487,12 @@ def check_config_ajax(request):
                 request,
                 dict(error_list=error_list),
                 force_template=True)
+
+# This is a global non-view for inline KO i18n
+def _ko(str=""):
+  return _(str).replace("'", "\\'")
+
+# This global Mako filtering option, use it with ${ yourvalue | n,antixss }
+def antixss(value):
+  xss_regex = re.compile(r'<[^>]+>')
+  return xss_regex.sub('', value)

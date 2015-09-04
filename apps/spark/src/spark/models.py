@@ -16,8 +16,11 @@
 # limitations under the License.
 
 import json
+import logging
 import re
 import time
+
+from django.utils.translation import ugettext as _
 
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.lib.i18n import force_unicode
@@ -32,6 +35,10 @@ from beeswax.views import _parse_out_hadoop_jobs
 
 from spark.job_server_api import get_api as get_spark_api
 from spark.data_export import download as spark_download
+from desktop.lib.rest.http_client import RestException
+
+
+LOG = logging.getLogger(__name__)
 
 
 # To move to Editor API
@@ -79,10 +86,15 @@ class Notebook():
 
     return _data
 
+  def get_str(self):
+    return '\n\n'.join([snippet['statement_raw'] for snippet in self.get_data()['snippets']])
+
 
 def get_api(user, snippet):
   if snippet['type'] in ('hive', 'impala', 'spark-sql'):
     return HS2Api(user)
+  elif snippet['type'] in ('jar', 'py'):
+    return SparkBatchApi(user)
   elif snippet['type'] == 'text':
     return TextApi(user)
   else:
@@ -93,16 +105,29 @@ def _get_snippet_session(notebook, snippet):
   return [session for session in notebook['sessions'] if session['type'] == snippet['type']][0]
 
 
-class TextApi():
+# Base API
+
+class Api(object):
 
   def __init__(self, user):
     self.user = user
 
-  def create_session(self, lang):
+  def create_session(self, lang, properties=None):
     return {
         'type': lang,
-        'id': None
+        'id': None,
+        'properties': []
     }
+
+  def close_session(self, session):
+    pass
+
+
+# Text
+
+class TextApi(Api):
+
+  pass
 
 
 # HS2
@@ -120,10 +145,7 @@ def query_error_handler(func):
   return decorator
 
 
-class HS2Api():
-
-  def __init__(self, user):
-    self.user = user
+class HS2Api(Api):
 
   def _get_handle(self, snippet):
     snippet['result']['handle']['secret'], snippet['result']['handle']['guid'] = HiveServerQueryHandle.get_decoded(snippet['result']['handle']['secret'], snippet['result']['handle']['guid'])
@@ -138,12 +160,6 @@ class HS2Api():
       name = 'spark-sql'
 
     return dbms.get(self.user, query_server=get_query_server_config(name=name))
-
-  def create_session(self, lang):
-    return {
-        'type': lang,
-        'id': None # Real one at some point
-    }
 
   def execute(self, notebook, snippet):
     db = self._get_db(snippet)
@@ -171,7 +187,7 @@ class HS2Api():
     db = self._get_db(snippet)
 
     handle = self._get_handle(snippet)
-    operation =  db.get_operation_status(handle)
+    operation = db.get_operation_status(handle)
     status = HiveServerQueryHistory.STATE_MAP[operation.operationState]
 
     if status.index in (QueryHistory.STATE.failed.index, QueryHistory.STATE.expired.index):
@@ -210,14 +226,14 @@ class HS2Api():
 
     handle = self._get_handle(snippet)
     db.cancel_operation(handle)
-    return {'status': 'canceled'}
+    return {'status': 0}
 
   @query_error_handler
-  def get_log(self, snippet):
+  def get_log(self, snippet, startFrom=None, size=None):
     db = self._get_db(snippet)
 
     handle = self._get_handle(snippet)
-    return db.get_log(handle)
+    return db.get_log(handle, start_over=startFrom == 0)
 
   def download(self, notebook, snippet, format):
     try:
@@ -225,6 +241,8 @@ class HS2Api():
       handle = self._get_handle(snippet)
       return data_export.download(handle, format, db)
     except Exception, e:
+      LOG.exception('error downloading notebook')
+
       if not hasattr(e, 'message') or not e.message:
         message = e
       else:
@@ -247,7 +265,7 @@ class HS2Api():
       return 50
 
   @query_error_handler
-  def close(self, snippet):
+  def close_statement(self, snippet):
     if snippet['type'] == 'impala':
       from impala import conf as impala_conf
 
@@ -256,9 +274,9 @@ class HS2Api():
 
       handle = self._get_handle(snippet)
       db.close_operation(handle)
-      return {'status': 'closed'}
+      return {'status': 0}
     else:
-      return {'status': 'skipped'}
+      return {'status': -1}  # skipped
 
   def _get_jobs(self, log):
     return _parse_out_hadoop_jobs(log)
@@ -266,15 +284,29 @@ class HS2Api():
 
 # Spark
 
+class SparkApi(Api):
+  PROPERTIES = [
+    {'name': 'jars', 'nice_name': _('Jars'), 'default': '', 'type': 'csv-hdfs-files', 'is_yarn': False},
+    {'name': 'files', 'nice_name': _('Files'), 'default': '', 'type': 'csv-hdfs-files', 'is_yarn': False},
+    {'name': 'pyFiles', 'nice_name': _('pyFiles'), 'default': '', 'type': 'csv-hdfs-files', 'is_yarn': False},
 
-class SparkApi():
+    {'name': 'driverMemory', 'nice_name': _('Driver Memory'), 'default': '1', 'type': 'jvm', 'is_yarn': False},
 
-  def __init__(self, user):
-    self.user = user
+    {'name': 'driverCores', 'nice_name': _('Driver Cores'), 'default': '1', 'type': 'number', 'is_yarn': True},
+    {'name': 'executorCores', 'nice_name': _('Executor Cores'), 'default': '1', 'type': 'number', 'is_yarn': True},
+    {'name': 'queue', 'nice_name': _('Queue'), 'default': '1', 'type': 'string', 'is_yarn': True},
+    {'name': 'archives', 'nice_name': _('Archives'), 'default': '', 'type': 'csv-hdfs-files', 'is_yarn': True},
+    {'name': 'numExecutors', 'nice_name': _('Executors Numbers'), 'default': '1', 'type': 'number', 'is_yarn': True},
+  ]
 
-  def create_session(self, lang='scala'):
+  def create_session(self, lang='scala', properties=None):
+    properties = dict([(p['name'], p['value']) for p in properties]) if properties is not None else {}
+
+    properties['kind'] = lang
+
     api = get_spark_api(self.user)
-    response = api.create_session(lang=lang)
+
+    response = api.create_session(**properties)
 
     status = api.get_session(response['id'])
     count = 0
@@ -284,9 +316,14 @@ class SparkApi():
       count += 1
       time.sleep(1)
 
+    if status['state'] != 'idle':
+      info = '\n'.join(status['log']) if status['log'] else 'timeout'
+      raise QueryError(_('The Spark session could not be created in the cluster: %s') % info)
+
     return {
         'type': lang,
-        'id': response['id']
+        'id': response['id'],
+        'properties': []
     }
 
   def execute(self, notebook, snippet):
@@ -341,10 +378,15 @@ class SparkApi():
 
     if content['status'] == 'ok':
       data = content['data']
+      images = []
 
       try:
         table = data['application/vnd.livy.table.v1+json']
       except KeyError:
+        try:
+          images = [data['image/png']]
+        except KeyError:
+          images = []
         data = [[data['text/plain']]]
         meta = [{'name': 'Header', 'type': 'STRING_TYPE', 'comment': ''}]
         type = 'text'
@@ -360,6 +402,7 @@ class SparkApi():
 
       return {
           'data': data,
+          'images': images,
           'meta': meta,
           'type': type
       }
@@ -392,16 +435,100 @@ class SparkApi():
     session = _get_snippet_session(notebook, snippet)
     response = api.cancel(session['id'])
 
-    return {'status': 'canceled'}
+    return {'status': 0}
 
-  def get_log(self, snippet):
+  def get_log(self, snippet, startFrom=0, size=None):
     return 'Not available'
 
   def _progress(self, snippet, logs):
     return 50
 
-  def close(self, snippet):
+  def close_statement(self, snippet): # Individual statements cannot be closed
     pass
+
+  def close_session(self, session):
+    api = get_spark_api(self.user)
+
+    if session['id'] is not None:
+      try:
+        api.close(session['id'])
+        return {
+          'session': session['id'],
+          'status': 0
+        }
+      except RestException, e:
+        if e.code == 404 or e.code == 500: # TODO remove the 500
+          raise SessionExpired(e)
+    else:
+      return {'status': -1}
+
+  def _get_jobs(self, log):
+    return []
+
+
+class SparkBatchApi(Api):
+
+  def create_session(self, lang, properties=None):
+    return {
+        'type': lang,
+        'id': None
+    }
+
+  def execute(self, notebook, snippet):
+    api = get_spark_api(self.user)
+
+    properties = {
+        'file': snippet['properties'].get('app_jar'),
+        'className': snippet['properties'].get('class'),
+        'args': snippet['properties'].get('arguments'),
+        'pyFiles': snippet['properties'].get('py_file'),
+        # files
+        # driverMemory
+        # driverCores
+        # executorMemory
+        # executorCores
+        # archives
+    }
+
+    response = api.submit_batch(properties)
+    return {
+        'id': response['id'],
+        'has_result_set': True,
+        'properties': []
+    }
+
+  def check_status(self, notebook, snippet):
+    api = get_spark_api(self.user)
+
+    state = api.get_batch_status(snippet['result']['handle']['id'])
+    return {
+        'status': state,
+    }
+
+  def get_log(self, snippet, startFrom=0, size=None):
+    api = get_spark_api(self.user)
+
+    return api.get_batch_log(snippet['result']['handle']['id'], startFrom=startFrom, size=size)
+
+  def close_statement(self, snippet):
+    api = get_spark_api(self.user)
+
+    session_id = snippet['result']['handle']['id']
+    if session_id is not None:
+      api.close_batch(session_id)
+      return {
+        'session': session_id,
+        'status': 0
+      }
+    else:
+      return {'status': -1}  # skipped
+
+  def cancel(self, notebook, snippet):
+    # Batch jobs do not support interruption, so close statement instead.
+    return self.close_statement(snippet)
+
+  def _progress(self, snippet, logs):
+    return 50
 
   def _get_jobs(self, log):
     return []

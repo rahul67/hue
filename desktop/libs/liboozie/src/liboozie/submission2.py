@@ -20,24 +20,39 @@ import logging
 import os
 import time
 
+from django.utils.functional import wraps
 from django.utils.translation import ugettext as _
 
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.lib.i18n import smart_str
+from desktop.lib.parameterization import find_variables
+from desktop.models import Document2
 from hadoop import cluster
 from hadoop.fs.hadoopfs import Hdfs
-
-from desktop.models import Document2
-
-from jobsub.parameterization import find_variables
 
 from liboozie.oozie_api import get_oozie
 from liboozie.conf import REMOTE_DEPLOYMENT_DIR
 from liboozie.credentials import Credentials
 
 
-
 LOG = logging.getLogger(__name__)
+
+def submit_dryrun(run_func):
+  def decorate(self, deployment_dir=None):
+    if self.oozie_id is not None:
+      raise Exception(_("Submission already submitted (Oozie job id %s)") % (self.oozie_id,))
+
+    jt_address = cluster.get_cluster_addr_for_job_submission()
+
+    if deployment_dir is None:
+      self._update_properties(jt_address) # Needed as we need to set some properties like Credentials before
+      deployment_dir = self.deploy()
+
+    self._update_properties(jt_address, deployment_dir)
+    if self.properties.get('dryrun'):
+      self.api.dryrun(self.properties)
+    return run_func(self, deployment_dir)
+  return wraps(run_func)(decorate)
 
 
 class Submission(object):
@@ -61,6 +76,8 @@ class Submission(object):
     else:
       self.properties = {}
 
+    self.properties['security_enabled'] = self.api.security_enabled
+
   def __str__(self):
     if self.oozie_id:
       res = "Submission for job '%s'." % (self.oozie_id,)
@@ -70,21 +87,12 @@ class Submission(object):
       res += " -- " + self.oozie_id
     return res
 
+  @submit_dryrun
   def run(self, deployment_dir=None):
     """
     Take care of all the actions of submitting a Oozie workflow.
     Returns the oozie job id if all goes well.
     """
-    if self.oozie_id is not None:
-      raise Exception(_("Submission already submitted (Oozie job id %s)") % (self.oozie_id,))
-
-    jt_address = cluster.get_cluster_addr_for_job_submission()
-
-    if deployment_dir is None:
-      self._update_properties(jt_address) # Needed as we need to set some properties like Credentials before
-      deployment_dir = self.deploy()
-
-    self._update_properties(jt_address, deployment_dir)
 
     self.oozie_id = self.api.submit_job(self.properties)
     LOG.info("Submitted: %s" % (self,))
@@ -280,10 +288,14 @@ class Submission(object):
     # List jar files
     files = []
     lib_path = self.fs.join(deployment_dir, 'lib')
-    if hasattr(self.job, 'node_list'):
-      for node in self.job.node_list:
-        if hasattr(node, 'jar_path') and not node.jar_path.startswith(lib_path):
-          files.append(node.jar_path)
+    if hasattr(self.job, 'nodes'):
+      for node in self.job.nodes:
+        jar_path = node.data['properties'].get('jar_path')
+        if jar_path:
+          if not jar_path.startswith('/'): # If workspace relative path
+            jar_path = self.fs.join(self.job.deployment_dir, jar_path)
+          if not jar_path.startswith(lib_path): # If not already in lib
+            files.append(jar_path)
 
     # Copy the jar files to the workspace lib
     if files:
@@ -291,7 +303,7 @@ class Submission(object):
         LOG.debug("Updating %s" % jar_file)
         jar_lib_path = self.fs.join(lib_path, self.fs.basename(jar_file))
         # Refresh if needed
-        if self.fs.exists(jar_lib_path):
+        if self.fs.exists(jar_lib_path) and self.fs.exists(jar_file):
           stat_src = self.fs.stats(jar_file)
           stat_dest = self.fs.stats(jar_lib_path)
           if stat_src.fileId != stat_dest.fileId:

@@ -6,12 +6,12 @@
 # ===================================
 #
 # For complete documentation about the contents of this file, run
-#       $ <hue_root>/build/env/bin/hue config_help
+#   $ <hue_root>/build/env/bin/hue config_help
 #
 # All .ini files under the current directory are treated equally.  Their
 # contents are merged to form the Hue configuration, which can
 # can be viewed on the Hue at
-#       http://<hue_host>:<port>/dump_config
+#   http://<hue_host>:<port>/dump_config
 
 
 ###########################################################################
@@ -26,6 +26,10 @@
   # This is used for secure hashing in the session store.
   secret_key=
 
+  # Execute this script to produce the Django secret key. This will be used when
+  # `secret_key` is not set.
+  ## secret_key_script=
+
   # Webserver listens on this address and port
   http_host=0.0.0.0
   http_port=8000
@@ -33,7 +37,7 @@
   # Time zone name
   time_zone=America/Los_Angeles
 
-  # Enable or disable Django debug mode
+  # Enable or disable Django debug mode.
   ## django_debug_mode=true
 
   # Enable or disable database debug mode.
@@ -81,8 +85,18 @@
   ## ssl_password_script=
 
   # List of allowed and disallowed ciphers in cipher list format.
-  # See http://www.openssl.org/docs/apps/ciphers.html for more information on cipher list format.
-  ## ssl_cipher_list=DEFAULT:!aNULL:!eNULL:!LOW:!EXPORT:!SSLv2
+  # See http://www.openssl.org/docs/apps/ciphers.html for more information on
+  # cipher list format. This list is from
+  # https://wiki.mozilla.org/Security/Server_Side_TLS v3.7 intermediate
+  # recommendation, which should be compatible with Firefox 1, Chrome 1, IE 7,
+  # Opera 5 and Safari 1.
+  ## ssl_cipher_list=ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-DSS-AES128-GCM-SHA256:kEDH+AESGCM:ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA:ECDHE-ECDSA-AES256-SHA:DHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA:DHE-DSS-AES128-SHA256:DHE-RSA-AES256-SHA256:DHE-DSS-AES256-SHA:DHE-RSA-AES256-SHA:AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-SHA:AES:CAMELLIA:DES-CBC3-SHA:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!aECDH:!EDH-DSS-DES-CBC3-SHA:!EDH-RSA-DES-CBC3-SHA:!KRB5-DES-CBC3-SHA
+
+  # Path to default Certificate Authority certificates.
+  ## ssl_cacerts=/etc/hue/cacerts.pem
+
+  # Choose whether Hue should validate certificates received from the server.
+  ## validate=true
 
   # LDAP username and password of the hue user used for LDAP authentications.
   # Set it to use LDAP Authentication with HiveServer2 and Impala.
@@ -95,6 +109,9 @@
   # Help improve Hue with anonymous usage analytics.
   # Use Google Analytics to see how many times an application or specific section of an application is used, nothing more.
   ## collect_usage=true
+
+  # Enable X-Forwarded-Host header if the load balancer requires it.
+  ## use_x_forwarded_host=false
 
   # Support for HTTPS termination at the load-balancer level with SECURE_PROXY_SSL_HEADER.
   ## secure_proxy_ssl_header=false
@@ -165,12 +182,12 @@
   #     }
   #   ]
   # }
+  ## log_redaction_file=
 
   # Comma separated list of strings representing the host/domain names that the Hue server can serve.
   # e.g.: localhost,domain1,*
   ## allowed_hosts=*
 
-#poll_enabled=false
 
   # Administrators
   # ----------------
@@ -183,8 +200,9 @@
   # -------------------
   [[custom]]
 
-  # Top banner HTML code
-  ## banner_top_html=
+    # Top banner HTML code
+    # e.g. <H2>Test Lab A2 Hue Services</H2>
+    ## banner_top_html=
 
   # Configuration options for user authentication into the web application
   # ------------------------------------------------------------------------
@@ -203,6 +221,8 @@
     # - libopenid.backend.OpenIDBackend
     # - liboauth.backend.OAuthBackend
     #     (New oauth, support Twitter, Facebook, Google+ and Linkedin
+    # Multiple Authentication backends are supported by specifying a comma-separated list in order of priority.
+    # However, in order to enable OAuthBackend, it must be the ONLY backend configured.
     ## backend=desktop.auth.backend.AllowFirstUserDjangoBackend
 
     # The service to use when querying PAM.
@@ -232,6 +252,24 @@
 
     # Apply 'expires_after' to superusers.
     ## expire_superusers=true
+
+    # Force users to change password on first login with desktop.auth.backend.AllowFirstUserDjangoBackend
+    ## change_default_password=false
+
+    # Number of login attempts allowed before a record is created for failed logins
+    ## login_failure_limit=3
+
+    # After number of allowed login attempts are exceeded, do we lock out this IP and optionally user agent?
+    ## login_lock_out_at_failure=false
+
+    # If set, defines period of inactivity in seconds after which failed logins will be forgotten
+    ## login_cooloff_time=60
+
+    # If True, lock out based on IP and browser user agent
+    ## login_lock_out_by_combination_browser_user_agent_and_ip=false
+
+    # If True, lock out based on IP and user
+    ## login_lock_out_by_combination_user_and_ip=false
 
   # Configuration options for connecting to LDAP and Active Directory
   # -------------------------------------------------------------------
@@ -275,10 +313,10 @@
     ## sync_groups_on_login=false
 
     # Ignore the case of usernames when searching for existing users in Hue.
-    ## ignore_username_case=false
+    ## ignore_username_case=true
 
     # Force usernames to lowercase when creating new users from LDAP.
-    ## force_username_lowercase=false
+    ## force_username_lowercase=true
 
     # Use search bind authentication.
     ## search_bind_authentication=true
@@ -315,8 +353,11 @@
       # Base filter for searching for groups
       ## group_filter="objectclass=*"
 
-      # The username attribute in the LDAP schema
+      # The group name attribute in the LDAP schema
       ## group_name_attr=cn
+
+      # The attribute of the group object which identifies the members of the group
+      ## group_member_attr=members
 
     [[[ldap_servers]]]
 
@@ -358,6 +399,16 @@
         # Whether or not to follow referrals
         ## follow_referrals=false
 
+        # Enable python-ldap debugging.
+        ## debug=false
+
+        # Sets the debug level within the underlying LDAP C lib.
+        ## debug_level=255
+
+        # Possible values for trace_level are 0 for no logging, 1 for only logging the method calls with arguments,
+        # 2 for logging the method calls with arguments and the complete results and 9 for also logging the traceback of method calls.
+        ## trace_level=0
+
         ## [[[[[users]]]]]
 
           # Base filter for searching for users
@@ -381,9 +432,10 @@
     # Database engine is typically one of:
     # postgresql_psycopg2, mysql, sqlite3 or oracle.
     #
-    # Note that for sqlite3, 'name', below is a a path to the filename. For other backends, it is the database name.
-    # Note for Oracle, options={'threaded':true} must be set in order to avoid crashes.
+    # Note that for sqlite3, 'name', below is a path to the filename. For other backends, it is the database name.
+    # Note for Oracle, options={"threaded":true} must be set in order to avoid crashes.
     # Note for Oracle, you can use the Oracle Service Name by setting "port=0" and then "name=<host>:<port>/<service_name>".
+    # Note for MariaDB use the 'mysql' engine.
     ## engine=sqlite3
     ## host=
     ## port=
@@ -405,7 +457,7 @@
     ## secure=false
 
     # The cookie containing the users' session ID will use the HTTP only flag.
-    ## http_only=false
+    ## http_only=true
 
     # Use session-length cookies. Logs out the user when she closes the browser window.
     ## expire_at_browser_close=false
@@ -458,6 +510,19 @@
     # The Authorize URL
     ## authenticate_url=https://api.twitter.com/oauth/authorize
 
+  # Configuration options for Metrics
+  # ------------------------------------------------------------------------
+  [[metrics]]
+
+   # Enable the metrics URL "/desktop/metrics"
+   ## enable_web_metrics=True
+
+   # If specified, Hue will write metrics to this file.
+   ## location=/var/log/hue/metrics.json
+
+   # Time in milliseconds on how frequently to collect metrics
+   ## collection_interval=30000
+
 
 ###########################################################################
 # Settings to configure SAML
@@ -508,7 +573,7 @@
 
 
 ###########################################################################
-# Settings to configure OpenId
+# Settings to configure OpenID
 ###########################################################################
 
 [libopenid]
@@ -760,6 +825,13 @@
   # Location on local filesystem where the uploaded archives are temporary stored.
   ## archive_upload_tempdir=/tmp
 
+  # Show Download Button for HDFS file browser.
+  ## show_download_button=false
+
+  # Show Upload Button for HDFS file browser.
+  ## show_upload_button=false
+
+
 ###########################################################################
 # Settings to configure liboozie
 ###########################################################################
@@ -791,7 +863,7 @@
   ## remote_data_dir=/user/hue/oozie/workspaces
 
   # Maximum of Oozie workflows or coodinators to retrieve in one API call.
-  ## oozie_jobs_count=100
+  ## oozie_jobs_count=50
 
   # Use Cron format for defining the frequency of a Coordinator instead of the old frequency number/unit.
   ## enable_cron_scheduling=true
@@ -834,6 +906,7 @@
   ## close_queries=false
 
   # Thrift version to use when communicating with HiveServer2.
+  # New column format is from version 7.
   ## thrift_version=7
 
   [[ssl]]
@@ -901,7 +974,7 @@
 
 
 ###########################################################################
-# Settings to configure Sqoop
+# Settings to configure Sqoop2
 ###########################################################################
 
 [sqoop]
@@ -909,6 +982,9 @@
 
   # Sqoop server URL
   ## server_url=http://localhost:12000/sqoop
+
+  # Path to configuration directory
+  ## sqoop_conf_dir=/etc/sqoop2/conf
 
 
 ###########################################################################
@@ -963,6 +1039,9 @@
   ## Query sent when no term is entered
   ## empty_query=*:*
 
+  # Use latest Solr 5.2+ features.
+  ## latest=false
+
 
 ###########################################################################
 # Settings to configure Solr Indexer
@@ -972,9 +1051,6 @@
 
   # Location of the solrctl binary.
   ## solrctl_path=/usr/bin/solrctl
-
-  # Zookeeper ensemble.
-  ## solr_zk_ensemble=localhost:2181/solr
 
 
 ###########################################################################
@@ -991,13 +1067,16 @@
 
 
 ###########################################################################
-# Settings to configure Job Browser
+# Settings to configure Job Browser.
 ###########################################################################
 
 [jobbrowser]
   # Share submitted jobs information with all users. If set to false,
   # submitted jobs are visible only to the owner and administrators.
   ## share_jobs=true
+
+  # Whether to disalbe the job kill button for all users in the jobbrowser
+  ## disable_killing_jobs=false
 
 
 ###########################################################################
@@ -1025,11 +1104,20 @@
 ###########################################################################
 
 [spark]
-  # URL of the REST Spark Job Server.
-  ## server_url=http://localhost:8090/
+  # Host address of the Livy Server.
+  ## livy_server_host=localhost
+
+  # Port of the Livy Server.
+  ## livy_server_port=8998
+
+  # Configure livy to start with 'process', 'thread', or 'yarn' workers.
+  ## livy_server_session_kind=process
+
+  # If livy should use proxy users when submitting a job.
+  ## livy_impersonation_enabled=true
 
   # List of available types of snippets
-  ## languages='[{"name": "Scala", "type": "scala"},{"name": "Python", "type": "python"},{"name": "Impala SQL", "type": "impala"},{"name": "Hive SQL", "type": "hive"},{"name": "Text", "type": "text"}]'
+  ## languages='[{"name": "Scala Shell", "type": "scala"},{"name": "PySpark Shell", "type": "python"},{"name": "R Shell", "type": "r"},{"name": "Jar", "type": "Jar"},{"name": "Python", "type": "py"},{"name": "Impala SQL", "type": "impala"},{"name": "Hive SQL", "type": "hive"},{"name": "Text", "type": "text"}]'
 
 
 ###########################################################################
@@ -1063,3 +1151,16 @@
 
   # Sentry configuration directory, where sentry-site.xml is located.
   ## sentry_conf_dir=/etc/sentry/conf
+
+
+###########################################################################
+# Settings to configure the ZooKeeper Lib
+###########################################################################
+
+[libzookeeper]
+  # ZooKeeper ensemble. Comma separated list of Host/Port.
+  # e.g. localhost:2181,localhost:2182,localhost:2183
+  ## ensemble=localhost:2181
+
+  # Name of Kerberos principal when using security.
+  ## principal_name=zookeeper

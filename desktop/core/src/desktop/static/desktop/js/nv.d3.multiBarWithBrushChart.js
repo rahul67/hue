@@ -94,7 +94,7 @@ nv.models.multiBarWithBrushChart = function() {
   //------------------------------------------------------------
 
   var showTooltip = function(e, offsetElement) {
-    var left = e.pos[0] + ( offsetElement.offsetLeft || 0 ),
+    var left = e.e.clientX,
         top = e.pos[1] + ( offsetElement.offsetTop || 0),
         x = xAxis.tickFormat()(multibar.x()(e.point, e.pointIndex)),
         y = yAxis.tickFormat()(multibar.y()(e.point, e.pointIndex)),
@@ -160,9 +160,13 @@ nv.models.multiBarWithBrushChart = function() {
           .attr('y', margin.top + availableHeight / 2)
           .text(function(d) { return d });
 
+        container.selectAll('.nv-multiBarWithLegend').style('visibility', 'hidden');
+        container.selectAll('.nv-noData').style('visibility', 'visible');
+
         return chart;
       } else {
-        container.selectAll('.nv-noData').remove();
+        container.selectAll('.nv-multiBarWithLegend').style('visibility', 'visible');
+        container.selectAll('.nv-noData').style('visibility', 'hidden');
       }
 
       //------------------------------------------------------------
@@ -290,6 +294,7 @@ nv.models.multiBarWithBrushChart = function() {
           brush
               .x(x)
               .on('brush', onBrush)
+              .on('brushstart', onBrushStart)
               .on('brushend', onBrushEnd)
 
           if (brushExtent) brush.extent(brushExtent);
@@ -475,6 +480,10 @@ nv.models.multiBarWithBrushChart = function() {
         dispatch.brush({extent: extent, brush: brush});
       }
 
+      function onBrushStart(){
+        gEnter.select(".nv-brush").select(".extent").style("display", "block");
+      }
+
       function onBrushEnd(){
         brushExtent = brush.empty() ? null : brush.extent();
         extent = brush.empty() ? x.domain() : brush.extent();
@@ -491,6 +500,8 @@ nv.models.multiBarWithBrushChart = function() {
 
           onSelectRange(_from, _to);
         }
+
+        gEnter.select(".nv-brush").select(".extent").style("display", "none");
       }
     });
 
@@ -658,6 +669,11 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
+  chart.disableSelection = function() {
+    selectionEnabled = false;
+    return chart;
+  };
+
   chart.hideSelection = function() {
     selectionHidden = true;
     selectionEnabled = false;
@@ -687,6 +703,12 @@ nv.models.multiBarWithBrushChart = function() {
     if (selectBars) {
       selectBars(args);
     }
+    return chart;
+  };
+
+  chart.brush = function(_) {
+    if (!arguments.length) return brush;
+    brush = _;
     return chart;
   };
 

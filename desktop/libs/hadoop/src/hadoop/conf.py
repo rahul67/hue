@@ -17,11 +17,14 @@
 
 from django.utils.translation import ugettext_lazy as _t
 from desktop.lib.conf import Config, UnspecifiedConfigSection, ConfigSection, coerce_bool
+from desktop.conf import default_ssl_validate
 import fnmatch
 import logging
 import os
 
 DEFAULT_NN_HTTP_PORT = 50070
+
+LOG = logging.getLogger(__name__)
 
 def find_file_recursive(desired_glob, root):
   def f():
@@ -69,7 +72,7 @@ HDFS_CLUSTERS = UnspecifiedConfigSection(
                               default=False, type=coerce_bool),
       SSL_CERT_CA_VERIFY=Config("ssl_cert_ca_verify",
                   help="In secure mode (HTTPS), if SSL certificates from YARN Rest APIs have to be verified against certificate authority",
-                  default=True,
+                  dynamic_default=default_ssl_validate,
                   type=coerce_bool),
       TEMP_DIR=Config("temp_dir", help="HDFS directory for temporary files",
                       default='/tmp', type=str),
@@ -144,7 +147,7 @@ YARN_CLUSTERS = UnspecifiedConfigSection(
                   help="URL of the HistoryServer API"),
       SSL_CERT_CA_VERIFY=Config("ssl_cert_ca_verify",
                   help="In secure mode (HTTPS), if SSL certificates from YARN Rest APIs have to be verified against certificate authority",
-                  default=True,
+                  dynamic_default=default_ssl_validate,
                   type=coerce_bool)
     )
   )
@@ -188,7 +191,7 @@ def config_validator(user):
   for name in YARN_CLUSTERS.keys():
     cluster = YARN_CLUSTERS[name]
     if cluster.SUBMIT_TO.get():
-      res.extend(test_yarn_configurations())
+      res.extend(test_yarn_configurations(user))
       submit_to.append('yarn_clusters.' + name)
 
   if not submit_to:
@@ -198,7 +201,7 @@ def config_validator(user):
   return res
 
 
-def test_yarn_configurations():
+def test_yarn_configurations(user):
   # Single cluster for now
   from hadoop.yarn.resource_manager_api import get_resource_manager
 
@@ -206,11 +209,12 @@ def test_yarn_configurations():
 
   try:
     url = ''
-    api = get_resource_manager()
+    api = get_resource_manager(user.username)
     url = api._url
     api.apps()
   except Exception, e:
     msg = 'Failed to contact Resource Manager at %s: %s' % (url, e)
+    LOG.exception(msg)
     result.append(('Resource Manager', msg))
 
   return result

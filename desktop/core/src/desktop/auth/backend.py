@@ -26,13 +26,12 @@ In addition, the User classes they return must support:
  - has_hue_permission(action, app) -> boolean
 Because Django's models are sometimes unfriendly, you'll want
 User to remain a django.contrib.auth.models.User object.
-
-In Desktop, only one authentication backend may be specified.
 """
 from django.contrib.auth.models import User
 import django.contrib.auth.backends
 import logging
 import desktop.conf
+from desktop import metrics
 from django.utils.importlib import import_module
 from django.core.exceptions import ImproperlyConfigured
 from useradmin.models import get_profile, get_default_user_group, UserProfile
@@ -61,6 +60,7 @@ def load_augmentation_class():
     LOG.info("Augmenting users with class: %s" % (klass,))
     return klass
   except:
+    LOG.exception('failed to augment class')
     raise ImproperlyConfigured("Could not find user_augmentation_class: %s" % (class_name,))
 
 _user_augmentation_class = None
@@ -169,6 +169,9 @@ class AllowFirstUserDjangoBackend(django.contrib.auth.backends.ModelBackend):
     if self.is_first_login_ever():
       user = find_or_create_user(username, password)
       user = rewrite_user(user)
+      userprofile = get_profile(user)
+      userprofile.first_login = False
+      userprofile.save()
 
       default_group = get_default_user_group()
       if default_group is not None:
@@ -200,6 +203,7 @@ class OAuthBackend(DesktopBackendBase):
   build/env/bin/pip install httplib2
   """
 
+  @metrics.oauth_authentication_time
   def authenticate(self, access_token):
     username = access_token['screen_name']
     password = access_token['oauth_token_secret']
@@ -286,6 +290,8 @@ class PamBackend(DesktopBackendBase):
   Authentication backend that uses PAM to authenticate logins. The first user to
   login will become the superuser.
   """
+
+  @metrics.pam_authentication_time
   def check_auth(self, username, password):
     if pam.authenticate(username, password, desktop.conf.AUTH.PAM_SERVICE.get()):
       is_super = False
@@ -358,7 +364,7 @@ class LdapBackend(object):
         setattr(self._backend.settings, 'BIND_DN', bind_dn)
 
         bind_password = ldap_config.BIND_PASSWORD.get()
-        if bind_password is None:
+        if not bind_password:
           password = ldap_config.BIND_PASSWORD_SCRIPT.get()
         setattr(self._backend.settings, 'BIND_PASSWORD', bind_password)
 
@@ -403,6 +409,7 @@ class LdapBackend(object):
     else:
       self.add_ldap_config(desktop.conf.LDAP)
 
+  @metrics.ldap_authentication_time
   def authenticate(self, username=None, password=None, server=None):
     self.add_ldap_config_for_server(server)
 
@@ -455,7 +462,7 @@ class LdapBackend(object):
 
   def import_groups(self, server, user):
     connection = ldap_access.get_connection_from_server(server)
-    import_ldap_users(connection, user.username, sync_groups=True, import_by_dn=False)
+    import_ldap_users(connection, user.username, sync_groups=True, import_by_dn=False, server=server)
 
   @classmethod
   def manages_passwords_externally(cls):
@@ -472,6 +479,8 @@ class SpnegoDjangoBackend(django.contrib.auth.backends.ModelBackend):
   the KRB5_KTNAME environment variable to point to another location
   (e.g. /etc/hue/hue.keytab).
   """
+
+  @metrics.spnego_authentication_time
   def authenticate(self, username=None):
     username = self.clean_username(username)
     is_super = False

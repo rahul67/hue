@@ -3,27 +3,19 @@
 Welcome to the repository for Hue
 =================================
 
-Hue is an open source Web interface for analyzing data with Apache Hadoop: `gethue.com
+Hue is an open source Web interface for analyzing data with any Apache Hadoop: `gethue.com
 <http://gethue.com>`_ 
 
 .. image:: docs/images/hue-screen.png
 
 It features:
 
-      * File Browser for accessing HDFS
-      * Hive Editor for developing and running Hive queries
-      * Search App for querying, exploring, visualizing data and dashboards with Solr
-      * Impala App for executing interactive SQL queries
-      * Spark Editor and Dashboard
-      * Pig Editor for submitting Pig scripts
-      * Oozie Editor and Dashboard for submitting and monitoring workflows, coordinators and bundles
-      * HBase Browser for visualizing, querying and modifying HBase tables
-      * Metastore Browser for accessing Hive metadata and HCatalog
-      * Job Browser for accessing MapReduce jobs (MR1/MR2-YARN)
-      * Job Designer for creating MapReduce/Streaming/Java jobs
-      * A Sqoop 2 Editor and Dashboard
-      * A ZooKeeper Browser and Editor
-      * A DB Query Editor for MySql, PostGres, Sqlite and Oracle
+      * SQL Editors for Hive, Impala, MySql, PostGres, Sqlite and Oracle
+      * Dynamic search dashboards for Solr
+      * Spark Notebooks
+      * Browsers for YARN, HDFS, Hive table Metastore, HBase, ZooKeeper
+      * Pig Editor, Sqoop2, Oozie workflows Editors and Dashboards
+      * Wizards to import data into Hadoop
 
 On top of that, a SDK is available for creating new apps integrated with Hadoop.
 
@@ -34,7 +26,7 @@ Getting Started
 ===============
 To build and get the development server running::
 
-    $ git clone http://github.com/cloudera/hue.git
+    $ git clone https://github.com/cloudera/hue.git
     $ cd hue
     $ make apps
     $ build/env/bin/hue runserver
@@ -80,10 +72,12 @@ your system:
       * libtidy-0.99-0 (for unit tests only)
       * libxml2-dev
       * libxslt-dev
+      * make
       * mvn (from ``maven`` package or maven3 tarball)
       * openldap-dev / libldap2-dev
       * python-dev
       * python-setuptools
+      * libgmp3-dev
 
     CentOS/RHEL:
       * ant
@@ -96,6 +90,7 @@ your system:
       * libtidy (for unit tests only)
       * libxml2-devel
       * libxslt-devel
+      * make
       * mvn (from ``maven`` package or maven3 tarball)
       * mysql
       * mysql-devel
@@ -103,18 +98,20 @@ your system:
       * python-devel
       * sqlite-devel
       * openssl-devel (for version 7+)
+      * gmp-devel
 
     MacOS:
       * Xcode command line tools
       * Oracle's JDK 1.7+
       * maven (Homebrew)
       * mysql (Homebrew)
+      * gmp (Homebrew)
 
 
 File Layout
 ===========
-The Hue "framework" is in ``desktop``. ``/core/`` contains the Web components and
-``desktop/libs/`` the API for talking to Hadoop.
+The Hue "framework" is in ``desktop/core/`` and contains the Web components.
+``desktop/libs/`` is the API for talking to various Hadoop services.
 The installable apps live in ``apps/``.  Please place third-party dependencies in the app's ext-py/
 directory.
 
@@ -149,8 +146,8 @@ Main Stack
 ==========
 Hue would not be possible without:
 
-   * Python 2.6 - 2.7
-   * Django 1.4 (https://docs.djangoproject.com/en/1.4/)
+   * Python 2.6.5 - 2.7
+   * Django 1.6 (https://docs.djangoproject.com/en/1.6/)
    * Knockout.js (http://knockoutjs.com/)
    * jQuery (http://jquery.com/)
    * Bootstrap (http://getbootstrap.com/)

@@ -124,6 +124,7 @@ TEMPLATE_LOADERS = (
 
 MIDDLEWARE_CLASSES = [
     # The order matters
+    'desktop.middleware.MetricsMiddleware',
     'desktop.middleware.EnsureSafeMethodMiddleware',
     'desktop.middleware.AuditLoggingMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -134,6 +135,7 @@ MIDDLEWARE_CLASSES = [
     'django.middleware.locale.LocaleMiddleware',
     'babeldjango.middleware.LocaleMiddleware',
     'desktop.middleware.AjaxMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
     # Must be after Session, Auth, and Ajax. Before everything else.
     'desktop.middleware.LoginAndPermissionMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -144,6 +146,7 @@ MIDDLEWARE_CLASSES = [
     'django.middleware.csrf.CsrfViewMiddleware',
 
     'django.middleware.http.ConditionalGetMiddleware',
+    'axes.middleware.FailedLoginMiddleware',
 ]
 
 if os.environ.get(ENV_DESKTOP_DEBUG):
@@ -177,7 +180,10 @@ INSTALLED_APPS = [
     'babeldjango',
 
     # Desktop injects all the other installed apps into here magically.
-    'desktop'
+    'desktop',
+
+    # App that keeps track of failed logins.
+    'axes',
 ]
 
 LOCALE_PATHS = [
@@ -215,6 +221,9 @@ FILE_UPLOAD_HANDLERS = (
   'django.core.files.uploadhandler.MemoryFileUploadHandler',
   'django.core.files.uploadhandler.TemporaryFileUploadHandler',
 )
+
+# Custom CSRF Failure View
+CSRF_FAILURE_VIEW = 'desktop.views.csrf_failure'
 
 ############################################################
 # Part 4: Installation of apps
@@ -286,6 +295,9 @@ if os.getenv('DESKTOP_DB_CONFIG'):
     ["ENGINE", "NAME", "TEST_NAME", "USER", "PASSWORD", "HOST", "PORT"],
     conn_string.split(':')))
 else:
+  test_name = os.environ.get('DESKTOP_DB_TEST_NAME', get_desktop_root('desktop-test.db'))
+  logging.debug("DESKTOP_DB_TEST_NAME SET: %s" % test_name)
+
   default_db = {
     "ENGINE" : desktop.conf.DATABASE.ENGINE.get(),
     "NAME" : desktop.conf.DATABASE.NAME.get(),
@@ -295,7 +307,7 @@ else:
     "PORT" : str(desktop.conf.DATABASE.PORT.get()),
     "OPTIONS": force_dict_to_strings(desktop.conf.DATABASE.OPTIONS.get()),
     # DB used for tests
-    "TEST_NAME" : get_desktop_root('desktop-test.db'),
+    "TEST_NAME" : test_name,
     # Wrap each request in a transaction.
     "ATOMIC_REQUESTS" : True,
   }
@@ -325,11 +337,19 @@ TEST_RUNNER = 'desktop.lib.test_runners.HueTestRunner'
 if 'test' in sys.argv:
   CACHE_MIDDLEWARE_SECONDS = 0
 
+# Limit Nose coverage to Hue apps
+NOSE_ARGS = [
+  '--cover-package=%s' % ','.join([app.name for app in appmanager.DESKTOP_APPS + appmanager.DESKTOP_LIBS]),
+  '--no-path-adjustment',
+  '--traverse-namespace'
+]
+
 TIME_ZONE = desktop.conf.TIME_ZONE.get()
-# Desktop supports only one authentication backend.
-AUTHENTICATION_BACKENDS = (desktop.conf.AUTH.BACKEND.get(),)
+
 if desktop.conf.DEMO_ENABLED.get():
   AUTHENTICATION_BACKENDS = ('desktop.auth.backend.DemoBackend',)
+else:
+  AUTHENTICATION_BACKENDS = tuple(desktop.conf.AUTH.BACKEND.get())
 
 EMAIL_HOST = desktop.conf.SMTP.HOST.get()
 EMAIL_PORT = desktop.conf.SMTP.PORT.get()
@@ -338,11 +358,20 @@ EMAIL_HOST_PASSWORD = desktop.conf.get_smtp_password()
 EMAIL_USE_TLS = desktop.conf.SMTP.USE_TLS.get()
 DEFAULT_FROM_EMAIL = desktop.conf.SMTP.DEFAULT_FROM.get()
 
-# Used for securely creating sessions.  Should be unique and not shared with anybody.
-SECRET_KEY = desktop.conf.SECRET_KEY.get()
-if SECRET_KEY == "":
+# Used for securely creating sessions. Should be unique and not shared with anybody. Changing auth backends will invalidate all open sessions.
+SECRET_KEY = desktop.conf.get_secret_key()
+if SECRET_KEY:
+  SECRET_KEY += str(AUTHENTICATION_BACKENDS)
+else:
   import uuid
   SECRET_KEY = str(uuid.uuid4())
+
+# Axes
+AXES_LOGIN_FAILURE_LIMIT = desktop.conf.AUTH.LOGIN_FAILURE_LIMIT.get()
+AXES_LOCK_OUT_AT_FAILURE = desktop.conf.AUTH.LOGIN_LOCK_OUT_AT_FAILURE.get()
+AXES_COOLOFF_TIME = desktop.conf.AUTH.LOGIN_COOLOFF_TIME.get()
+AXES_USE_USER_AGENT = desktop.conf.AUTH.LOGIN_LOCK_OUT_BY_COMBINATION_BROWSER_USER_AGENT_AND_IP.get()
+AXES_LOCK_OUT_BY_COMBINATION_USER_AND_IP = desktop.conf.AUTH.LOGIN_LOCK_OUT_BY_COMBINATION_USER_AND_IP.get()
 
 # SAML
 SAML_AUTHENTICATION = 'libsaml.backend.SAML2Backend' in AUTHENTICATION_BACKENDS
@@ -375,7 +404,10 @@ if OAUTH_AUTHENTICATION:
 if desktop.conf.REDIRECT_WHITELIST.get():
   MIDDLEWARE_CLASSES.append('desktop.middleware.EnsureSafeRedirectURLMiddleware')
 
-#Support HTTPS load-balancing
+# Enable X-Forwarded-Host header if the load balancer requires it
+USE_X_FORWARDED_HOST = desktop.conf.USE_X_FORWARDED_HOST.get()
+
+# Support HTTPS load-balancing
 if desktop.conf.SECURE_PROXY_SSL_HEADER.get():
   SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTOCOL', 'https')
 
@@ -388,11 +420,23 @@ SKIP_SOUTH_TESTS = True
 # ticket cache
 os.environ['KRB5CCNAME'] = desktop.conf.KERBEROS.CCACHE_PATH.get()
 
+# If Hue is configured to use a CACERTS truststore, make sure that the
+# REQUESTS_CA_BUNDLE is set so that we can use it when we make external requests.
+# This is for the REST calls made by Hue with the requests library.
+if desktop.conf.SSL_CACERTS.get() and os.environ.get('REQUESTS_CA_BUNDLE') is None:
+  os.environ['REQUESTS_CA_BUNDLE'] = desktop.conf.SSL_CACERTS.get()
+
 # Memory
 if desktop.conf.MEMORY_PROFILER.get():
   MEMORY_PROFILER = hpy()
   MEMORY_PROFILER.setrelheap()
 
+
 if not desktop.conf.DATABASE_LOGGING.get():
-  from desktop.monkey_patches import disable_database_logging
+  def disable_database_logging():
+    from django.db.backends import BaseDatabaseWrapper
+    from django.db.backends.util import CursorWrapper
+
+    BaseDatabaseWrapper.make_debug_cursor = lambda self, cursor: CursorWrapper(cursor, self)
+
   disable_database_logging()

@@ -28,11 +28,11 @@ from django.utils.translation import ugettext as _
   ${_table(files, path, current_request_path, 'chooser')}
 </%def>
 
-<%def name="list_table_browser(files, path, current_request_path, cwd_set=True)">
-  ${_table(files, path, current_request_path, 'view')}
+<%def name="list_table_browser(files, path, current_request_path, show_download_button, cwd_set=True)">
+  ${_table(files, path, current_request_path, 'view', show_download_button)}
 </%def>
 
-<%def name="_table(files, path, current_request_path, view)">
+<%def name="_table(files, path, current_request_path, view, show_download_button)">
 
   <link href="${ static('filebrowser/css/listdir_components.css') }" rel="stylesheet" type="text/css">
   <table class="table table-condensed datatables tablescroller-disable">
@@ -154,7 +154,7 @@ from django.utils.translation import ugettext as _
 
   <!-- rename modal -->
   <div id="renameModal" class="modal hide fade">
-    <form id="renameForm" action="/filebrowser/rename?next=${current_request_path}" method="POST" enctype="multipart/form-data" class="form-inline form-padding-fix">
+    <form id="renameForm" action="/filebrowser/rename?next=${current_request_path | n,unicode }" method="POST" enctype="multipart/form-data" class="form-inline form-padding-fix">
       ${ csrf_token(request) | n,unicode }
       <div class="modal-header">
         <a href="#" class="close" data-dismiss="modal">&times;</a>
@@ -178,10 +178,10 @@ from django.utils.translation import ugettext as _
   </div>
 
   <!-- chown modal -->
-  % if is_superuser:
+  % if is_fs_superuser:
   <div id="changeOwnerModal" class="modal hide fade">
     <%
-      select_filter = is_superuser and 'SelectWithOther' or ''
+      select_filter = is_fs_superuser and 'SelectWithOther' or ''
     %>
     <form id="chownForm" action="/filebrowser/chown" method="POST" enctype="multipart/form-data" class="form-stacked form-padding-fix">
       ${ csrf_token(request) | n,unicode }
@@ -191,7 +191,7 @@ from django.utils.translation import ugettext as _
       </div>
 
       <div class="modal-body change-owner-modal-body clearfix" >
-        <div class="alert alert-message block-message info">${_('Note: Only the Hadoop superuser, "%(superuser)s" on this file system, may change the owner of a file.') % dict(superuser=superuser)}</div>
+        <div class="alert alert-message block-message info">${_('Note: Only the Hadoop superuser, "%(superuser)s" or the HDFS supergroup, "%(supergroup)s" on this file system, may change the owner of a file.') % dict(superuser=superuser, supergroup=supergroup)}</div>
         <div style="padding-left: 15px; padding-bottom: 10px;">
           <label>${_('User')}</label>
           ${ edit.selection("user", users, user.username, "user_other") }
@@ -325,7 +325,7 @@ from django.utils.translation import ugettext as _
   <div id="uploadFileModal" class="modal hide fade">
     <div class="modal-header">
       <a href="#" class="close" data-dismiss="modal">&times;</a>
-      <h3>${_('Uploading to:')} <span id="uploadDirName" data-bind="text: currentPath"></span></h3>
+      <h3>${_('Upload to')} <span id="uploadDirName" data-bind="text: currentPath"></span></h3>
     </div>
     <div class="modal-body form-inline">
       <div id="fileUploader" class="uploader">
@@ -341,8 +341,7 @@ from django.utils.translation import ugettext as _
   <div id="uploadArchiveModal" class="modal hide fade">
     <div class="modal-header">
       <a href="#" class="close" data-dismiss="modal">&times;</a>
-      <h3>${_('Uploading to:')} <span id="uploadDirName" data-bind="text: currentPath"></span></h3>
-      <p>${_('The file will then be extracted in the path specified above.')}</p>
+      <h3>${_('Upload and extract in')} <span id="uploadDirName" data-bind="text: currentPath"></span></h3>
     </div>
     <div class="modal-body form-inline">
       <div id="archiveUploader" class="uploader">
@@ -414,7 +413,9 @@ from django.utils.translation import ugettext as _
     isCurrentDirSelected().length == 0"><i class="fa fa-random"></i> ${_('Move')}</a></li>
     <li><a href="#" title="${_('Copy')}" data-bind="click: $root.copy, enable: $root.selectedFiles().length > 0 &&
     isCurrentDirSelected().length == 0"><i class="fa fa-files-o"></i> ${_('Copy')}</a></li>
+    % if show_download_button:
     <li><a href="#" title="${_('Download')}" data-bind="visible: !$root.inTrash() && $root.selectedFiles().length == 1 && selectedFile().type == 'file', click: $root.downloadFile"><i class="fa fa-arrow-circle-o-down"></i> ${_('Download')}</a></li>
+    % endif
     <li class="divider"></li>
     % if is_fs_superuser:
     <li data-bind="css: {'disabled': $root.isCurrentDirSentryManaged || selectedSentryFiles().length > 0 }">
@@ -458,7 +459,11 @@ from django.utils.translation import ugettext as _
       <td class="center" data-bind="click: handleSelect" style="cursor: default">
         <div data-bind="visible: name != '..', css: { hueCheckbox: name != '..', 'fa': name != '..', 'fa-check': selected }"></div>
       </td>
-      <td class="left"><i data-bind="click: $root.viewFile, css: { 'fa': true, 'fa-play': $.inArray(name, ['workflow.xml', 'coordinator.xml', 'bundle.xml']) > -1, 'fa-file-o': type == 'file', 'fa-folder': type != 'file', 'fa-folder-open': type != 'file' && hovered }"></i></td>
+      <td class="left"><i data-bind="click: $root.viewFile, css: { 'fa': true,
+       % if 'oozie' in apps:
+      'fa-play': $.inArray(name, ['workflow.xml', 'coordinator.xml', 'bundle.xml']) > -1,
+       % endif
+      'fa-file-o': type == 'file', 'fa-folder': type != 'file', 'fa-folder-open': type != 'file' && hovered }"></i></td>
       <td data-bind="attr: {'title': tooltip}" rel="tooltip">
         <!-- ko if: name == '..' -->
         <a href="#" data-bind="click: $root.viewFile"><i class="fa fa-level-up"></i></a>
@@ -499,7 +504,7 @@ from django.utils.translation import ugettext as _
 
   <script src="${ static('desktop/js/jquery.hdfsautocomplete.js') }" type="text/javascript" charset="utf-8"></script>
   <script src="${ static('desktop/js/jquery.hdfstree.js') }" type="text/javascript" charset="utf-8"></script>
-  <script src="${ static('desktop/ext/js/knockout-min.js') }" type="text/javascript" charset="utf-8"></script>
+  <script src="${ static('desktop/ext/js/knockout.min.js') }" type="text/javascript" charset="utf-8"></script>
   <script src="${ static('desktop/ext/js/jquery/plugins/jquery-ui-1.10.4.draggable-droppable-sortable.min.js') }" type="text/javascript" charset="utf-8"></script>
   <script src="${ static('desktop/ext/js/datatables-paging-0.1.js') }" type="text/javascript" charset="utf-8"></script>
   <script src="${ static('desktop/js/dropzone.js') }" type="text/javascript" charset="utf-8"></script>
@@ -507,6 +512,7 @@ from django.utils.translation import ugettext as _
 
   <script charset="utf-8">
     var _dragged;
+    var _dropzone;
 
     ko.bindingHandlers.drag = {
       init: function(element, valueAccessor, allBindingsAccessor, viewModel) {
@@ -759,7 +765,7 @@ from django.utils.translation import ugettext as _
       self.recordsPerPageChoices = ["15", "30", "45", "60", "100", "200", "1000"],
       self.recordsPerPage = ko.observable($.cookie("hueFilebrowserRecordsPerPage"));
       self.targetPageNum = ko.observable(1);
-      self.targetPath = ko.observable("${current_request_path}");
+      self.targetPath = ko.observable("${current_request_path | n,unicode }");
       self.sortBy = ko.observable("name");
       self.sortDescending = ko.observable(false);
       self.searchQuery = ko.observable("");
@@ -991,6 +997,7 @@ from django.utils.translation import ugettext as _
         if (file.type == "dir") {
           // Reset page number so that we don't hit a page that doesn't exist
           self.targetPageNum(1);
+          self.searchQuery("");
           self.targetPath("${url('filebrowser.views.view', path=urlencode('/'))}" + "." + stripHashes(file.path));
           location.hash = stripHashes(file.path);
         } else {
@@ -1206,10 +1213,14 @@ from django.utils.translation import ugettext as _
       };
 
       self.submitSelected = function() {
-        $.get("${ url('oozie:submit_external_job', application_path='/') }../" + self.selectedFile().path, function (response) {
-          $('#submit-wf-modal').html(response);
-          $('#submit-wf-modal').modal('show');
-        });
+        % if 'oozie' in apps:
+          $.get("${ url('oozie:submit_external_job', application_path='/') }../" + self.selectedFile().path, function (response) {
+            $('#submit-wf-modal').html(response);
+            $('#submit-wf-modal').modal('show');
+          });
+        % else:
+          $.jHueNotify.warn("${ _('Submitting is not available as the Oozie app is disabled') }");
+        % endif
       };
 
       self.createDirectory = function (formElement) {
@@ -1262,9 +1273,9 @@ from django.utils.translation import ugettext as _
         var uploader = new qq.FileUploader({
           element:document.getElementById("fileUploader"),
           action:action,
-          template:'<div class="qq-uploader">' +
-                  '<div class="qq-upload-drop-area"><span>${_('Drop files here to upload')}</span></div>' +
-                  '<div class="qq-upload-button">${_('Select files')}</div>' +
+          template:'<div class="qq-uploader" style="margin-left: 10px">' +
+                  '<div class="qq-upload-drop-area"><span>${_('Drop the files here to upload')}</span></div>' +
+                  '<div class="qq-upload-button">${_('Select files')}</div> &nbsp; <span class="muted">or drag and drop them here</span>' +
                   '<ul class="qq-upload-list"></ul>' +
                   '</div>',
           fileTemplate:'<li>' +
@@ -1283,7 +1294,7 @@ from django.utils.translation import ugettext as _
             if (response.status != 0) {
               $(document).trigger("error", "${ _('Error: ') }" + response['data']);
             } else if (num_of_pending_uploads == 0) {
-              location = "/filebrowser/view" + self.currentPath();
+              location = "/filebrowser/view=" + self.currentPath();
             }
           },
           onSubmit:function (id, fileName, responseJSON) {
@@ -1312,9 +1323,9 @@ from django.utils.translation import ugettext as _
         var uploader = new qq.FileUploader({
           element:document.getElementById("archiveUploader"),
           action:"/filebrowser/upload/archive",
-          template:'<div class="qq-uploader">' +
-                  '<div class="qq-upload-drop-area"><span>${_('Drop files here to upload')}</span></div>' +
-                  '<div class="qq-upload-button">${_('Upload a zip file')}</div>' +
+          template:'<div class="qq-uploader" style="margin-left: 10px">' +
+                  '<div class="qq-upload-drop-area"><span>${_('Drop the archives here to upload and extract them')}</span></div>' +
+                  '<div class="qq-upload-button">${_('Select ZIP, TGZ or BZ2 files')}</div> &nbsp; <span class="muted">or drag and drop them here</span>' +
                   '<ul class="qq-upload-list"></ul>' +
                   '</div>',
           fileTemplate:'<li>' +
@@ -1331,7 +1342,7 @@ from django.utils.translation import ugettext as _
           onComplete:function (id, fileName, responseJSON) {
             num_of_pending_uploads--;
             if (num_of_pending_uploads == 0) {
-              location = "/filebrowser/view" + self.currentPath();
+              location = "/filebrowser/view=" + self.currentPath();
             }
           },
           onSubmit:function (id, fileName, responseJSON) {
@@ -1441,10 +1452,10 @@ from django.utils.translation import ugettext as _
           _isExternalFile = true;
         });
 
-        $('.card').on('dragenter', function (e) {
+        $('body').on('dragenter', function (e) {
           e.preventDefault();
 
-          if (_isExternalFile) {
+          if (_isExternalFile && !($("#uploadFileModal").is(":visible")) && !($("#uploadArchiveModal").is(":visible"))) {
             showHoverMsg("${_('Drop files here to upload')}");
           }
         });
@@ -1470,7 +1481,6 @@ from django.utils.translation import ugettext as _
           }
         });
 
-        var _dropzone;
         $(document).on('currPathLoaded', function (e, ops) {
           try {
             _dropzone.destroy();
@@ -1523,6 +1533,12 @@ from django.utils.translation import ugettext as _
             },
             canceled: function () {
               $.jHueNotify.info("${_('Upload has been canceled')}");
+            },
+            complete: function (data) {
+              var response = JSON.parse(data.xhr.response);
+              if (response && response.status && response.status == -1){
+                $.jHueNotify.error(response.data);
+              }
             }
           };
           _dropzone = new Dropzone(document.body, options);
@@ -1532,7 +1548,7 @@ from django.utils.translation import ugettext as _
                 $('#progressStatus').addClass('hide');
                 $('#progressStatusBar').addClass('hide');
                 $('#progressStatusBar div').css("width", "0");
-                location.reload();
+                viewModel.retrieveData();
                 },
               2500);
           });
@@ -1784,13 +1800,12 @@ from django.utils.translation import ugettext as _
         }
         if (window.location.href.indexOf("#") == -1) {
           viewModel.targetPageNum(1);
-          targetPath = "${current_request_path}";
+          targetPath = "${current_request_path | n,unicode }";
         }
         if (targetPath != "") {
           viewModel.targetPath(targetPath);
         }
       }
-
       addPathToHistory(viewModel.targetPath())
 
       viewModel.retrieveData();
@@ -1831,7 +1846,7 @@ from django.utils.translation import ugettext as _
 
       $.ajaxSetup({
         error:function (x, e) {
-          if (x.status == 500) {
+          if (x.status == 500 && x.responseText.indexOf("jobbrowser") == -1) {
             $(document).trigger("error", "${_('There was a problem with your request.')}");
             $("#hueBreadcrumbText").blur();
           }
@@ -1862,7 +1877,7 @@ from django.utils.translation import ugettext as _
         }
         if (window.location.href.indexOf("#") == -1) {
           viewModel.targetPageNum(1);
-          targetPath = "${current_request_path}";
+          targetPath = "${current_request_path | n,unicode }";
         }
         if (targetPath != "") {
           viewModel.targetPath(targetPath);
@@ -1884,6 +1899,21 @@ from django.utils.translation import ugettext as _
         } else {
           resetActionbar();
         }
+      });
+
+      $("#uploadFileModal").on("shown", function(){
+        _dropzone.disable();
+      });
+      $("#uploadFileModal").on("hidden", function(){
+        _dropzone.enable();
+        $(".qq-upload-drop-area").hide();
+      });
+      $("#uploadArchiveModal").on("shown", function(){
+        _dropzone.disable();
+      });
+      $("#uploadArchiveModal").on("hidden", function(){
+        _dropzone.enable();
+        $(".qq-upload-drop-area").hide();
       });
     });
   </script>

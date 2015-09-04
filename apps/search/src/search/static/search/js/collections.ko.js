@@ -29,12 +29,14 @@ var Collection = function (coll) {
 
   self.id = ko.observable(coll.id);
   self.name = ko.observable(coll.name);
-  self.label = ko.observable(coll.label);
+  self.description = ko.observable(coll.description);
   self.enabled = ko.observable(coll.enabled);
   self.isCoreOnly = ko.observable(coll.isCoreOnly);
   self.absoluteUrl = ko.observable(coll.absoluteUrl);
   self.owner = ko.observable(coll.owner);
   self.isOwner = ko.observable(coll.isOwner);
+  self.doc1_id = ko.observable(coll.doc1_id);
+
   self.selected = ko.observable(false);
   self.hovered = ko.observable(false);
 
@@ -80,6 +82,7 @@ var SearchCollectionsModel = function (props) {
       return coll.selected();
     });
   }, self);
+
   self.selectedOwnerCollections = ko.computed(function () {
     return ko.utils.arrayFilter(self.selectedCollections(), function (coll) {
       return coll.isOwner();
@@ -88,6 +91,10 @@ var SearchCollectionsModel = function (props) {
 
   self.atLeastOneSelected = ko.computed(function() {
     return self.selectedCollections().length >= 1 && self.selectedCollections().length == self.selectedOwnerCollections().length;
+  });
+
+  self.oneSelected = ko.computed(function() {
+    return self.selectedCollections().length == 1 && self.selectedCollections().length == self.selectedOwnerCollections().length;
   });
 
   self.selectedImportableCollections = ko.computed(function () {
@@ -121,10 +128,6 @@ var SearchCollectionsModel = function (props) {
     location.href = collection.absoluteUrl();
   };
 
-  self.editIndex = function (collection) {
-    location.href = self.INDEXER_URL + collection.name();
-  };
-
   self.markManyForDeletion = function (collections) {
     if (self.atLeastOneSelected()){
       self.collectionToDelete = collections;
@@ -136,8 +139,7 @@ var SearchCollectionsModel = function (props) {
     if (self.atLeastOneSelected()){
       self.isLoading(true);
       $(document).trigger("deleting");
-      $.post(self.DELETE_URL,
-        {
+      $.post(self.DELETE_URL, {
           collections: ko.mapping.toJSON(self.selectedCollections())
         },
         function (data) {
@@ -149,10 +151,9 @@ var SearchCollectionsModel = function (props) {
   };
 
   self.copyCollections = function (collections) {
-    if (self.atLeastOneSelected()){
+    if (self.selectedCollections().length > 0){
       $(document).trigger("copying");
-      $.post(self.COPY_URL,
-        {
+      $.post(self.COPY_URL, {
           collections: ko.mapping.toJSON(self.selectedCollections())
         }, function (data) {
           self.updateCollections();
@@ -202,8 +203,7 @@ var SearchCollectionsModel = function (props) {
         name: imp.name()
       });
     });
-    $.post(self.IMPORT_URL,
-      {
+    $.post(self.IMPORT_URL, {
         selected: ko.toJSON(selected)
       },
       function (data) {

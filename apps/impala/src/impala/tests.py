@@ -15,14 +15,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
+import logging
 import os
 import re
 import sys
+
+import desktop.conf as desktop_conf
 
 from nose.plugins.skip import SkipTest
 from nose.tools import assert_true, assert_equal, assert_false
 
 from django.contrib.auth.models import User
+from django.core.urlresolvers import reverse
 
 from desktop.lib.django_test_util import make_logged_in_client
 from desktop.lib.test_utils import grant_access, add_to_group
@@ -33,8 +38,13 @@ from beeswax.models import SavedQuery, QueryHistory
 from beeswax.server import dbms
 from beeswax.test_base import get_query_server_config, wait_for_query_to_finish, fetch_query_result_data
 from beeswax.tests import _make_query
+from hadoop.pseudo_hdfs4 import get_db_prefix, is_live_cluster
 
+from impala import conf
 from impala.conf import SERVER_HOST
+
+
+LOG = logging.getLogger(__name__)
 
 
 class MockDbms:
@@ -94,22 +104,19 @@ class TestMockedImpala:
 
 
 class TestImpalaIntegration:
-  DATABASE = 'test_hue_impala'
 
-  def setUp(self):
-    self.finish = []
+  @classmethod
+  def setup_class(cls):
+    cls.finish = []
 
-    # We need a real Impala cluster currently
-    if not 'impala' in sys.argv and not os.environ.get('TEST_IMPALAD_HOST'):
+    if not is_live_cluster():
       raise SkipTest
 
-    if os.environ.get('TEST_IMPALAD_HOST'):
-      self.finish.append(SERVER_HOST.set_for_testing(os.environ.get('TEST_IMPALAD_HOST')))
-
-    self.client = make_logged_in_client()
-    self.user = User.objects.get(username='test')
+    cls.client = make_logged_in_client()
+    cls.user = User.objects.get(username='test')
     add_to_group('test')
-    self.db = dbms.get(self.user, get_query_server_config(name='impala'))
+    cls.db = dbms.get(cls.user, get_query_server_config(name='impala'))
+    cls.DATABASE = get_db_prefix(name='impala')
 
     hql = """
       USE default;
@@ -118,10 +125,10 @@ class TestImpalaIntegration:
       CREATE DATABASE %(db)s;
 
       USE %(db)s;
-    """ % {'db': self.DATABASE}
+    """ % {'db': cls.DATABASE}
 
-    resp = _make_query(self.client, hql, database='default', local=False, server_name='impala')
-    resp = wait_for_query_to_finish(self.client, resp, max=30.0)
+    resp = _make_query(cls.client, hql, database='default', local=False, server_name='impala')
+    resp = wait_for_query_to_finish(cls.client, resp, max=30.0)
 
     hql = """
       CREATE TABLE tweets (row_num INTEGER, id_str STRING, text STRING) STORED AS PARQUET;
@@ -133,12 +140,27 @@ class TestImpalaIntegration:
       INSERT INTO TABLE tweets VALUES (5, "531091827949309000", "i think @WWERollins was robbed of the IC title match this week on RAW also i wonder if he will get a rematch i hope so @WWE");
     """
 
-    resp = _make_query(self.client, hql, database=self.DATABASE, local=False, server_name='impala')
-    resp = wait_for_query_to_finish(self.client, resp, max=30.0)
+    resp = _make_query(cls.client, hql, database=cls.DATABASE, local=False, server_name='impala')
+    resp = wait_for_query_to_finish(cls.client, resp, max=30.0)
 
-    def tearDown(self):
-      for f in self.finish:
-        f()
+  @classmethod
+  def teardown_class(cls):
+    # We need to drop tables before dropping the database
+    hql = """
+    USE default;
+    DROP TABLE IF EXISTS %(db)s.tweets;
+    DROP DATABASE %(db)s;
+    """ % {'db': cls.DATABASE}
+    resp = _make_query(cls.client, hql, database='default', local=False, server_name='impala')
+    resp = wait_for_query_to_finish(cls.client, resp, max=30.0)
+
+    # Check the cleanup
+    databases = cls.db.get_databases()
+    assert_false(cls.DATABASE in databases)
+    assert_false('%(db)s_other' % {'db': cls.DATABASE} in databases)
+
+    for f in cls.finish:
+      f()
 
   def test_basic_flow(self):
     dbs = self.db.get_databases()
@@ -152,6 +174,8 @@ class TestImpalaIntegration:
       SELECT * FROM tweets ORDER BY row_num;
     """
     response = _make_query(self.client, QUERY, database=self.DATABASE, local=False, server_name='impala')
+    content = json.loads(response.content)
+    query_history = QueryHistory.get(content['id'])
 
     response = wait_for_query_to_finish(self.client, response, max=180.0)
 
@@ -159,7 +183,7 @@ class TestImpalaIntegration:
 
     # Check that we multiple fetches get all the result set
     while len(results) < 5:
-      content = fetch_query_result_data(self.client, response, n=len(results)) # We get less than 5 results most of the time, so increase offset
+      content = fetch_query_result_data(self.client, response, n=len(results), server_name='impala') # We get less than 5 results most of the time, so increase offset
       results += content['results']
 
     assert_equal([1, 2, 3, 4, 5], [col[0] for col in results])
@@ -168,10 +192,39 @@ class TestImpalaIntegration:
     results_start_over = []
 
     while len(results_start_over) < 5:
-      content = fetch_query_result_data(self.client, response, n=len(results_start_over))
+      content = fetch_query_result_data(self.client, response, n=len(results_start_over), server_name='impala')
       results_start_over += content['results']
 
     assert_equal(results_start_over, results)
+
+    # Check cancel query
+    resp = self.client.post(reverse('impala:api_cancel_query', kwargs={'query_history_id': query_history.id}))
+    content = json.loads(resp.content)
+    assert_equal(0, content['status'])
+
+  def test_explain(self):
+    QUERY = """
+      SELECT * FROM tweets ORDER BY row_num;
+    """
+    response = _make_query(self.client, QUERY, database=self.DATABASE, local=False, server_name='impala', submission_type='Explain')
+    json_response = json.loads(response.content)
+    assert_true('MERGING-EXCHANGE' in json_response['explanation'], json_response)
+    assert_true('SCAN HDFS' in json_response['explanation'], json_response)
+
+  def test_get_table_sample(self):
+    client = make_logged_in_client()
+
+    resp = client.get(reverse('impala:describe_table', kwargs={'database': self.DATABASE, 'table': 'tweets'}) + '?sample=true')
+
+    assert_equal(resp.status_code, 200)
+    assert_true('531091827' in resp.content, resp.content) # We are getting one or two random rows
+    assert_true(len(resp.context['sample']) > 0, resp.context['sample'])
+
+  def test_get_session(self):
+    resp = self.client.get(reverse("impala:api_get_session"))
+    data = json.loads(resp.content)
+    assert_true('properties' in data)
+    assert_true(data['properties'].get('http_addr'))
 
 
 # Could be refactored with SavedQuery.create_empty()
@@ -187,3 +240,51 @@ def create_saved_query(app_name, owner):
     Document.objects.link(design, owner=design.owner, extra=design.type, name=design.name, description=design.desc)
 
     return design
+
+
+def test_ssl_cacerts():
+  for desktop_kwargs, conf_kwargs, expected in [
+      ({'present': False}, {'present': False}, '/etc/hue/cacerts.pem'),
+      ({'present': False}, {'data': 'local-cacerts.pem'}, 'local-cacerts.pem'),
+
+      ({'data': 'global-cacerts.pem'}, {'present': False}, 'global-cacerts.pem'),
+      ({'data': 'global-cacerts.pem'}, {'data': 'local-cacerts.pem'}, 'local-cacerts.pem'),
+      ]:
+    resets = [
+      desktop_conf.SSL_CACERTS.set_for_testing(**desktop_kwargs),
+      conf.SSL.CACERTS.set_for_testing(**conf_kwargs),
+    ]
+
+    try:
+      assert_equal(conf.SSL.CACERTS.get(), expected,
+          'desktop:%s conf:%s expected:%s got:%s' % (desktop_kwargs, conf_kwargs, expected, conf.SSL.CACERTS.get()))
+    finally:
+      for reset in resets:
+        reset()
+
+
+def test_ssl_validate():
+  for desktop_kwargs, conf_kwargs, expected in [
+      ({'present': False}, {'present': False}, True),
+      ({'present': False}, {'data': False}, False),
+      ({'present': False}, {'data': True}, True),
+
+      ({'data': False}, {'present': False}, False),
+      ({'data': False}, {'data': False}, False),
+      ({'data': False}, {'data': True}, True),
+
+      ({'data': True}, {'present': False}, True),
+      ({'data': True}, {'data': False}, False),
+      ({'data': True}, {'data': True}, True),
+      ]:
+    resets = [
+      desktop_conf.SSL_VALIDATE.set_for_testing(**desktop_kwargs),
+      conf.SSL.VALIDATE.set_for_testing(**conf_kwargs),
+    ]
+
+    try:
+      assert_equal(conf.SSL.VALIDATE.get(), expected,
+          'desktop:%s conf:%s expected:%s got:%s' % (desktop_kwargs, conf_kwargs, expected, conf.SSL.VALIDATE.get()))
+    finally:
+      for reset in resets:
+        reset()

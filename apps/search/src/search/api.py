@@ -33,8 +33,20 @@ LOG = logging.getLogger(__name__)
 def utf_quoter(what):
   return urllib.quote(unicode(what).encode('utf-8'), safe='~@#$&()*!+=:;,.?/\'')
 
+
 def _guess_range_facet(widget_type, solr_api, collection, facet_field, properties, start=None, end=None, gap=None):
   try:
+    stats_json = solr_api.stats(collection['name'], [facet_field])
+    stat_facet = stats_json['stats']['stats_fields'][facet_field]
+
+    _compute_range_facet(widget_type, stat_facet, properties, start, end, gap)
+  except Exception, e:
+    print e
+    # stats not supported on all the fields, like text
+    pass
+  
+def _compute_range_facet(widget_type, stat_facet, properties, start=None, end=None, gap=None):
+
     if widget_type == 'pie-widget':
       SLOTS = 5
     elif widget_type == 'facet-widget':
@@ -42,8 +54,6 @@ def _guess_range_facet(widget_type, solr_api, collection, facet_field, propertie
     else:
       SLOTS = 100
 
-    stats_json = solr_api.stats(collection['name'], [facet_field])
-    stat_facet = stats_json['stats']['stats_fields'][facet_field]
     is_date = False
 
     if isinstance(stat_facet['min'], numbers.Number):
@@ -79,6 +89,7 @@ def _guess_range_facet(widget_type, solr_api, collection, facet_field, propertie
       start = re.sub('\.\d\d?\d?Z$', 'Z', start)
       try:
         start_ts = datetime.strptime(start, '%Y-%m-%dT%H:%M:%SZ')
+        start_ts.strftime('%Y-%m-%dT%H:%M:%SZ') # Check for dates before 1900
       except Exception, e:
         LOG.error('Bad date: %s' % e)
         start_ts = datetime.strptime('1970-01-01T00:00:00Z', '%Y-%m-%dT%H:%M:%SZ')
@@ -90,6 +101,7 @@ def _guess_range_facet(widget_type, solr_api, collection, facet_field, propertie
       end = re.sub('\.\d\d?\d?Z$', 'Z', end)
       try:
         end_ts = datetime.strptime(end, '%Y-%m-%dT%H:%M:%SZ')
+        end_ts.strftime('%Y-%m-%dT%H:%M:%SZ') # Check for dates before 1900
       except Exception, e:
         LOG.error('Bad date: %s' % e)
         end_ts = datetime.strptime('2050-01-01T00:00:00Z', '%Y-%m-%dT%H:%M:%SZ')
@@ -101,8 +113,12 @@ def _guess_range_facet(widget_type, solr_api, collection, facet_field, propertie
           mktime(start_ts.timetuple())
       ) / SLOTS
 
-      if difference < 1:
+      if difference < 2:
         gap = '+1SECONDS'
+      elif difference < 5:
+        gap = '+5SECONDS'
+      elif difference < 30:
+        gap = '+30SECONDS'
       elif difference < 100:
         gap = '+1MINUTES'
       elif difference < 60 * 5:
@@ -125,8 +141,10 @@ def _guess_range_facet(widget_type, solr_api, collection, facet_field, propertie
         gap = '+7DAYS'
       elif difference < 3600 * 24 * 40:
         gap = '+1MONTHS'
-      else:
+      elif difference < 3600 * 24 * 40 * 12:
         gap = '+1YEARS'
+      else:
+        gap = '+10YEARS'
 
     properties.update({
       'min': stats_min,
@@ -137,14 +155,16 @@ def _guess_range_facet(widget_type, solr_api, collection, facet_field, propertie
       'canRange': True,
       'isDate': is_date,
     })
-  except Exception, e:
-    print e
-    # stats not supported on all the fields, like text
-    pass
+
+    if widget_type == 'histogram-widget':
+      properties.update({
+        'timelineChartType': 'bar'
+      })
+
 
 def _round_date_range(tm):
-  start = tm - timedelta(minutes=tm.minute, seconds=tm.second, microseconds=tm.microsecond)
-  end = start + timedelta(minutes=60)
+  start = tm - timedelta(seconds=tm.second, microseconds=tm.microsecond)
+  end = start + timedelta(seconds=60)
   return start, end
 
 def _round_number_range(n):

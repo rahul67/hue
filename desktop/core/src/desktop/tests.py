@@ -19,8 +19,8 @@
 import json
 import logging
 import os
+import subprocess
 import sys
-import tempfile
 import time
 
 import desktop
@@ -32,15 +32,18 @@ import proxy.conf
 from nose.plugins.attrib import attr
 from nose.plugins.skip import SkipTest
 from nose.tools import assert_true, assert_false, assert_equal, assert_not_equal, assert_raises, nottest
+from django.conf import settings
 from django.conf.urls import patterns, url
 from django.contrib.auth.models import User
 from django.core.urlresolvers import reverse
 from django.http import HttpResponse
 from django.db.models import query, CharField, SmallIntegerField
 
+from beeswax.conf import HIVE_SERVER_HOST
+from pig.models import PigScript
 from useradmin.models import GroupPermission
 
-from beeswax.conf import HIVE_SERVER_HOST
+from desktop.appmanager import DESKTOP_APPS
 from desktop.lib import django_mako
 from desktop.lib.django_test_util import make_logged_in_client
 from desktop.lib.paginator import Paginator
@@ -48,9 +51,8 @@ from desktop.lib.conf import validate_path
 from desktop.lib.django_util import TruncatingModel
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.lib.test_utils import grant_access
-from desktop.models import Document
+from desktop.models import Document, Document2, get_data_link
 from desktop.views import check_config, home
-from pig.models import PigScript
 
 
 def setup_test_environment():
@@ -68,18 +70,13 @@ def teardown_test_environment():
   themselves and leaving threads hanging around.
   """
   import threading
+  import desktop.lib.thread_util
+
   # We should shut down all relevant threads by test completion.
   threads = list(threading.enumerate())
 
-  try:
-    import threadframe
-    import traceback
-    if len(threads) > 1:
-      for v in threadframe.dict().values():
-        traceback.print_stack(v)
-  finally:
-    # threadframe is only available in the dev build.
-    pass
+  if len(threads) > 1:
+    desktop.lib.thread_util.dump_traceback()
 
   assert 1 == len(threads), threads
 
@@ -130,7 +127,6 @@ def test_home():
   assert_equal([], tags['mine'][0]['docs'], tags)
   assert_equal([], tags['trash']['docs'], tags)
   assert_equal([], tags['history']['docs'], tags) # We currently don't fetch [doc.id]
-
 
 def test_skip_wizard():
   c = make_logged_in_client() # is_superuser
@@ -447,35 +443,41 @@ def test_app_permissions():
   # Reset all perms
   GroupPermission.objects.filter(group__name=GROUPNAME).delete()
 
+  def check_app(status_code, app_name):
+    if app_name in DESKTOP_APPS:
+      assert_equal(
+          status_code,
+          c.get('/' + app_name, follow=True).status_code,
+          'status_code=%s app_name=%s' % (status_code, app_name))
+
   # Access to nothing
-  assert_equal(401, c.get('/beeswax', follow=True).status_code)
-  assert_equal(401, c.get('/impala', follow=True).status_code)
-  assert_equal(401, c.get('/hbase', follow=True).status_code)
+  check_app(401, 'beeswax')
+  check_app(401, 'impala')
+  check_app(401, 'hbase')
 
   # Add access to beeswax
   grant_access(USERNAME, GROUPNAME, "beeswax")
-  assert_equal(200, c.get('/beeswax', follow=True).status_code)
-  assert_equal(401, c.get('/impala', follow=True).status_code)
-  assert_equal(401, c.get('/hbase', follow=True).status_code)
+  check_app(200, 'beeswax')
+  check_app(401, 'impala')
+  check_app(401, 'hbase')
 
   # Add access to hbase
   grant_access(USERNAME, GROUPNAME, "hbase")
-  assert_equal(200, c.get('/beeswax', follow=True).status_code)
-  assert_equal(401, c.get('/impala', follow=True).status_code)
-  assert_equal(200, c.get('/hbase', follow=True).status_code)
+  check_app(200, 'beeswax')
+  check_app(401, 'impala')
+  check_app(200, 'hbase')
 
   # Reset all perms
   GroupPermission.objects.filter(group__name=GROUPNAME).delete()
-
-  assert_equal(401, c.get('/beeswax', follow=True).status_code)
-  assert_equal(401, c.get('/impala', follow=True).status_code)
-  assert_equal(401, c.get('/hbase', follow=True).status_code)
+  check_app(401, 'beeswax')
+  check_app(401, 'impala')
+  check_app(401, 'hbase')
 
   # Test only impala perm
   grant_access(USERNAME, GROUPNAME, "impala")
-  assert_equal(401, c.get('/beeswax', follow=True).status_code)
-  assert_equal(200, c.get('/impala', follow=True).status_code)
-  assert_equal(401, c.get('/hbase', follow=True).status_code)
+  check_app(401, 'beeswax')
+  check_app(200, 'impala')
+  check_app(401, 'hbase')
 
 
 def test_error_handling_failure():
@@ -567,6 +569,7 @@ def test_validate_path():
 def test_config_check():
   reset = (
     desktop.conf.SECRET_KEY.set_for_testing(''),
+    desktop.conf.SECRET_KEY_SCRIPT.set_for_testing(present=False),
     desktop.conf.SSL_CERTIFICATE.set_for_testing('foobar'),
     desktop.conf.SSL_PRIVATE_KEY.set_for_testing(''),
     desktop.conf.DEFAULT_SITE_ENCODING.set_for_testing('klingon')
@@ -700,21 +703,24 @@ class BaseTestPasswordConfig(object):
   def get_password(self):
     raise NotImplementedError
 
-  @nottest
-  def run_test_read_password_from_script(self):
+  def test_read_password_from_script(self):
+    self._run_test_read_password_from_script_with(present=False)
+    self._run_test_read_password_from_script_with(data=None)
+    self._run_test_read_password_from_script_with(data='')
+
+  def _run_test_read_password_from_script_with(self, **kwargs):
     resets = [
-      self.get_config_password().set_for_testing(None),
-      self.get_config_password_script().set_for_testing(self.SCRIPT)
+      self.get_config_password().set_for_testing(**kwargs),
+      self.get_config_password_script().set_for_testing(self.SCRIPT),
     ]
 
     try:
-      assert_equal(self.get_password(), ' password from script ')
+      assert_equal(self.get_password(), ' password from script ', 'kwargs: %s' % kwargs)
     finally:
       for reset in resets:
         reset()
 
-  @nottest
-  def run_test_config_password_overrides_script_password(self):
+  def test_config_password_overrides_script_password(self):
     resets = [
       self.get_config_password().set_for_testing(' password from config '),
       self.get_config_password_script().set_for_testing(self.SCRIPT),
@@ -725,6 +731,43 @@ class BaseTestPasswordConfig(object):
     finally:
       for reset in resets:
         reset()
+
+  def test_password_script_raises_exception(self):
+    resets = [
+      self.get_config_password().set_for_testing(present=False),
+      self.get_config_password_script().set_for_testing(
+          '%s -c "import sys; sys.exit(1)"' % sys.executable
+      ),
+    ]
+
+    try:
+      assert_raises(subprocess.CalledProcessError, self.get_password)
+    finally:
+      for reset in resets:
+        reset()
+
+    resets = [
+      self.get_config_password().set_for_testing(present=False),
+      self.get_config_password_script().set_for_testing('/does-not-exist'),
+    ]
+
+    try:
+      assert_raises(subprocess.CalledProcessError, self.get_password)
+    finally:
+      for reset in resets:
+        reset()
+
+
+class TestSecretKeyConfig(BaseTestPasswordConfig):
+
+  def get_config_password(self):
+    return desktop.conf.SECRET_KEY
+
+  def get_config_password_script(self):
+    return desktop.conf.SECRET_KEY_SCRIPT
+
+  def get_password(self):
+    return desktop.conf.get_secret_key()
 
 
 class TestDatabasePasswordConfig(BaseTestPasswordConfig):
@@ -738,12 +781,6 @@ class TestDatabasePasswordConfig(BaseTestPasswordConfig):
   def get_password(self):
     return desktop.conf.get_database_password()
 
-  def test_read_password_from_script(self):
-    self.run_test_read_password_from_script()
-
-  def test_config_password_overrides_script_password(self):
-    self.run_test_config_password_overrides_script_password()
-
 
 class TestLDAPPasswordConfig(BaseTestPasswordConfig):
 
@@ -756,11 +793,6 @@ class TestLDAPPasswordConfig(BaseTestPasswordConfig):
   def get_password(self):
     return desktop.conf.get_ldap_password()
 
-  def test_read_password_from_script(self):
-    self.run_test_read_password_from_script()
-
-  def test_config_password_overrides_script_password(self):
-    self.run_test_config_password_overrides_script_password()
 
 class TestLDAPBindPasswordConfig(BaseTestPasswordConfig):
 
@@ -779,11 +811,6 @@ class TestLDAPBindPasswordConfig(BaseTestPasswordConfig):
   def get_password(self):
     return desktop.conf.get_ldap_bind_password(desktop.conf.LDAP.LDAP_SERVERS['test'])
 
-  def test_read_password_from_script(self):
-    self.run_test_read_password_from_script()
-
-  def test_config_password_overrides_script_password(self):
-    self.run_test_config_password_overrides_script_password()
 
 class TestSMTPPasswordConfig(BaseTestPasswordConfig):
 
@@ -796,8 +823,135 @@ class TestSMTPPasswordConfig(BaseTestPasswordConfig):
   def get_password(self):
     return desktop.conf.get_smtp_password()
 
-  def test_read_password_from_script(self):
-    self.run_test_read_password_from_script()
 
-  def test_config_password_overrides_script_password(self):
-    self.run_test_config_password_overrides_script_password()
+class TestDocument(object):
+
+  def setUp(self):
+    make_logged_in_client(username="original_owner", groupname="test_doc", recreate=True, is_superuser=False)
+    self.user = User.objects.get(username="original_owner")
+
+    make_logged_in_client(username="copy_owner", groupname="test_doc", recreate=True, is_superuser=False)
+    self.copy_user = User.objects.get(username="copy_owner")
+
+    # Get count of existing Document objects
+    self.doc2_count = Document2.objects.count()
+    self.doc1_count = Document.objects.count()
+
+    self.document2 = Document2.objects.create(name='Test Document2',
+                                              type='search-dashboard',
+                                              owner=self.user,
+                                              description='Test Document2')
+    self.document = Document.objects.link(content_object=self.document2,
+                                          owner=self.user,
+                                          name='Test Document',
+                                          description='Test Document',
+                                          extra='test')
+    self.document.save()
+    self.document2.doc.add(self.document)
+
+  def tearDown(self):
+    # Get any Doc2 objects that were created and delete them, Doc1 child objects will be deleted in turn
+    test_docs = Document2.objects.filter(name__contains='Test Document2')
+    test_docs.delete()
+
+  def test_document_create(self):
+    assert_equal(Document2.objects.count(), self.doc2_count + 1)
+    assert_equal(Document.objects.count(), self.doc1_count + 1)
+    assert_equal(Document2.objects.get(name='Test Document2').id, self.document2.id)
+    assert_equal(Document.objects.get(name='Test Document').id, self.document.id)
+
+  def test_document_copy(self):
+    name = 'Test Document2 Copy'
+    doc2 = self.document2.copy(name=name, owner=self.copy_user, description=self.document2.description)
+
+    # Test that copying a Document2 object creates another object
+    assert_equal(Document2.objects.count(), self.doc2_count + 2)
+    assert_equal(Document.objects.count(), self.doc1_count + 1)
+
+    # Test that the content object is not pointing to the same object
+    assert_not_equal(self.document2.doc, doc2.doc)
+
+    # Test that the owner is attributed to the new user
+    assert_equal(doc2.owner, self.copy_user)
+
+    # Test that copying enables attribute overrides
+    assert_equal(Document2.objects.filter(name=name).count(), 1)
+    assert_equal(doc2.description, self.document2.description)
+
+    doc = self.document.copy(doc2, name=name, owner=self.copy_user, description=self.document2.description)
+
+    # Test that copying a Document object creates another Document2 and Document object
+    assert_equal(Document2.objects.count(), self.doc2_count + 2)
+    assert_equal(Document.objects.count(), self.doc1_count + 2)
+
+    # Test that the content object is not pointing to the same object
+    assert_not_equal(self.document.content_object, doc.content_object)
+
+    # Test that the owner is attributed to the new user
+    assert_equal(doc.owner, self.copy_user)
+
+    # Test that copying enables attribute overrides
+    assert_equal(Document.objects.filter(name=name).count(), 1)
+    assert_equal(doc.description, self.document.description)
+
+
+def test_session_secure_cookie():
+  resets = [
+    desktop.conf.SSL_CERTIFICATE.set_for_testing('cert.pem'),
+    desktop.conf.SSL_PRIVATE_KEY.set_for_testing('key.pem'),
+    desktop.conf.SESSION.SECURE.set_for_testing(False),
+  ]
+  try:
+    assert_true(desktop.conf.is_https_enabled())
+    assert_false(desktop.conf.SESSION.SECURE.get())
+  finally:
+    for reset in resets:
+      reset()
+
+  resets = [
+    desktop.conf.SSL_CERTIFICATE.set_for_testing('cert.pem'),
+    desktop.conf.SSL_PRIVATE_KEY.set_for_testing('key.pem'),
+    desktop.conf.SESSION.SECURE.set_for_testing(True),
+  ]
+  try:
+    assert_true(desktop.conf.is_https_enabled())
+    assert_true(desktop.conf.SESSION.SECURE.get())
+  finally:
+    for reset in resets:
+      reset()
+
+  resets = [
+    desktop.conf.SSL_CERTIFICATE.set_for_testing('cert.pem'),
+    desktop.conf.SSL_PRIVATE_KEY.set_for_testing('key.pem'),
+    desktop.conf.SESSION.SECURE.set_for_testing(present=False),
+  ]
+  try:
+    assert_true(desktop.conf.is_https_enabled())
+    assert_true(desktop.conf.SESSION.SECURE.get())
+  finally:
+    for reset in resets:
+      reset()
+
+  resets = [
+    desktop.conf.SSL_CERTIFICATE.set_for_testing(present=None),
+    desktop.conf.SSL_PRIVATE_KEY.set_for_testing(present=None),
+    desktop.conf.SESSION.SECURE.set_for_testing(present=False),
+  ]
+  try:
+    assert_false(desktop.conf.is_https_enabled())
+    assert_false(desktop.conf.SESSION.SECURE.get())
+  finally:
+    for reset in resets:
+      reset()
+
+
+def test_get_data_link():
+  assert_equal(None, get_data_link({}))
+  assert_equal('gethue.com', get_data_link({'type': 'link', 'link': 'gethue.com'}))
+
+  assert_equal('/hbase/#Cluster/document_demo/query/20150527', get_data_link({'type': 'hbase', 'table': 'document_demo', 'row_key': '20150527'}))
+  assert_equal('/hbase/#Cluster/document_demo/query/20150527[f1]', get_data_link({'type': 'hbase', 'table': 'document_demo', 'row_key': '20150527', 'fam': 'f1'}))
+  assert_equal('/hbase/#Cluster/document_demo/query/20150527[f1:c1]', get_data_link({'type': 'hbase', 'table': 'document_demo', 'row_key': '20150527', 'fam': 'f1', 'col': 'c1'}))
+
+  assert_equal('/filebrowser/view=/data/hue/1', get_data_link({'type': 'hdfs', 'path': '/data/hue/1'}))
+  assert_equal('/metastore/table/default/sample_07', get_data_link({'type': 'hive', 'database': 'default', 'table': 'sample_07'}))

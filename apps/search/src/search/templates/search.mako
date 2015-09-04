@@ -15,7 +15,7 @@
 ## limitations under the License.
 
 <%!
-from desktop.views import commonheader, commonfooter
+from desktop.views import commonheader, commonfooter, _ko
 from desktop import conf
 from django.utils.translation import ugettext as _
 %>
@@ -32,34 +32,34 @@ ${ commonheader(_('Search'), "search", user, "80px") | n,unicode }
   }
 
   SLIDER_LABELS = {
-    STEP: "${_('Increment')}",
+    STEP: "${_('Increment')}"
   }
 </script>
 
-<div class="search-bar">
+<div class="search-bar" data-bind="visible: ! $root.isPlayerMode()">
   <div class="pull-right" style="padding-right:50px">
-    <button type="button" title="${ _('Edit') }" rel="tooltip" data-placement="bottom" data-bind="click: toggleEditing, css: {'btn': true, 'btn-inverse': isEditing}">
+    <a class="btn pointer" title="${ _('Player mode') }" rel="tooltip" data-placement="bottom" data-bind="click: function(){ $root.isEditing(false); $root.isPlayerMode(true); }">
+      <i class="fa fa-expand"></i>
+    </a>
+    &nbsp;&nbsp;
+    <a class="btn pointer" title="${ _('Edit') }" rel="tooltip" data-placement="bottom" data-bind="click: toggleEditing, css: {'btn': true, 'btn-inverse': isEditing}">
       <i class="fa fa-pencil"></i>
-    </button>
+    </a>
     % if is_owner:
-    <button type="button" title="${ _('Save') }" rel="tooltip" data-placement="bottom" data-loading-text="${ _("Saving...") }" data-bind="click: save, css: {'btn': true}, visible: columns().length != 0">
+    <a class="btn pointer" title="${ _('Save') }" rel="tooltip" data-placement="bottom" data-loading-text="${ _("Saving...") }" data-bind="click: save, css: {'btn': true}, visible: columns().length != 0">
       <i class="fa fa-save"></i>
-    </button>
+    </a>
     % endif
-    <button type="button" title="${ _('Settings') }" rel="tooltip" data-placement="bottom" data-toggle="modal" data-target="#settingsDemiModal"
+    <a class="btn pointer" title="${ _('General Settings') }" rel="tooltip" data-placement="bottom" data-toggle="modal" data-target="#settingsDemiModal"
         data-bind="css: {'btn': true}, visible: columns().length != 0">
       <i class="fa fa-cog"></i>
-    </button>
+    </a>
+    <a class="btn pointer" title="${ _('Query Definitions') }" rel="tooltip" data-placement="bottom" data-toggle="modal" data-target="#qdefinitionsDemiModal"
+        data-bind="css: {'btn': true}, visible: columns().length != 0">
+      <i class="fa fa-bookmark-o"></i>
+    </a>
 
-    <span style="padding-left:85px" data-bind="visible: columns().length == 0"></span>
-
-    &nbsp;&nbsp;&nbsp;
-
-    <button type="button" title="${ _('Share') }" rel="tooltip" data-placement="bottom" data-bind="click: showShareModal, css: {'btn': true}, visible: columns().length != 0, enable: $root.collection.id() != null">
-      <i class="fa fa-link"></i>
-    </button>
-
-    &nbsp;&nbsp;&nbsp;
+    <span data-bind="visible: columns().length != 0">&nbsp;&nbsp;&nbsp;</span>
 
     <a class="btn" href="${ url('search:new_search') }" title="${ _('New') }" rel="tooltip" data-placement="bottom" data-bind="css: {'btn': true}">
       <i class="fa fa-file-o"></i>
@@ -72,13 +72,18 @@ ${ commonheader(_('Search'), "search", user, "80px") | n,unicode }
   <form data-bind="visible: $root.isEditing() && columns().length == 0">
     ${ _('Select a search index') }
     <!-- ko if: columns().length == 0 -->
-    <select data-bind="options: $root.initial.collections, value: $root.collection.name, disable: isSyncingCollections">
-    </select>
-    <label class="checkbox" style="display:inline-block; margin-left: 10px">
-      <input type="checkbox" data-bind="checked: showCores" />${ _('Show cores') }
-      <i class="fa fa-spinner fa-spin" data-bind="visible: isSyncingCollections"></i>
-    </label>
+      <select data-bind="options: $root.initial.collections, value: $root.collection.name, disable: isSyncingCollections">
+      </select>
+
+      <label class="checkbox" style="display:inline-block; margin-left: 10px">
+        <input type="checkbox" data-bind="checked: showCores" />${ _('Show cores') }
+        <i class="fa fa-spinner fa-spin" data-bind="visible: isSyncingCollections"></i>
+      </label>
     <!-- /ko -->
+
+    <select data-bind="options: $root.availableDateFields, value: collection.timeFilter.field, optionsValue: 'name', visible: $root.isEditing() && $root.availableDateFields().length > 0" class="input-medium" style="margin-left: 4px"></select>
+    <span data-bind="template: {name: 'time-filter'}, visible: collection.timeFilter.type() == 'rolling'"></span>
+    <span data-bind="template: {name: 'time-fixed-filter'}, visible: collection.timeFilter.type() == 'fixed'"></span>
   </form>
 
   <form class="form-search" style="margin: 0" data-bind="submit: searchBtn, visible: columns().length != 0">
@@ -99,10 +104,18 @@ ${ commonheader(_('Search'), "search", user, "80px") | n,unicode }
 
       <a class="btn" href="javascript:void(0)" data-bind="click: $root.query.addQ"><i class="fa fa-plus"></i></a>
 
-      <button type="submit" id="search-btn" class="btn btn-inverse" style="margin-left:10px"><i class="fa fa-search"></i></button>
+      <button type="submit" id="search-btn" class="btn btn-inverse" style="margin-left:10px; margin-right:10px">
+        <i class="fa fa-search" data-bind="visible: ! isRetrievingResults()"></i>
+        <!--[if !IE]> --><i class="fa fa-spinner fa-spin" data-bind="visible: isRetrievingResults()"></i><!-- <![endif]-->
+        <!--[if IE]><img src="${ static('desktop/art/spinner-inverted.gif') }" data-bind="visible: isRetrievingResults()"/><![endif]-->
+      </button>
+
     </div>
+    <span data-bind="template: {name: 'time-filter'}, visible: collection.timeFilter.type() == 'rolling'"></span>
+    <span data-bind="template: {name: 'time-fixed-filter'}, visible: collection.timeFilter.type() == 'fixed'"></span>
   </form>
 </div>
+
 
 <%dashboard:layout_toolbar>
   <%def name="results()">
@@ -141,6 +154,17 @@ ${ commonheader(_('Search'), "search", user, "80px") | n,unicode }
          </a>
     </div>
 
+    <div data-bind="visible: $root.isLatest,
+                    css: { 'draggable-widget': true, 'disabled': !availableDraggableNumbers() },
+                    draggable: {data: draggableCounter(), isEnabled: availableDraggableNumbers,
+                    options: {'start': function(event, ui){lastWindowScrollPosition = $(window).scrollTop();$('.card-body').slideUp('fast');},
+                              'stop': function(event, ui){$('.card-body').slideDown('fast', function(){$(window).scrollTop(lastWindowScrollPosition)});}}}"
+         title="${_('Counter')}" rel="tooltip" data-placement="top">
+         <a data-bind="style: { cursor: $root.availableDraggableNumbers() ? 'move' : 'default' }">
+                       <i class="fa fa-superscript" style="font-size: 110%"></i>
+         </a>
+    </div>
+
     <div data-bind="css: { 'draggable-widget': true, 'disabled': !availableDraggableLeaflet()},
                     draggable: {data: draggableLeafletMap(), isEnabled: availableDraggableLeaflet,
                     options: {'start': function(event, ui){lastWindowScrollPosition = $(window).scrollTop();$('.card-body').slideUp('fast');},
@@ -149,7 +173,8 @@ ${ commonheader(_('Search'), "search", user, "80px") | n,unicode }
          <a data-bind="style: { cursor: 'move' }">
              <i class="fa fa-map-marker"></i>
          </a>
-   </div>
+    </div>
+
 
       </%def>
       <%def name="widgets()">
@@ -171,7 +196,8 @@ ${ commonheader(_('Search'), "search", user, "80px") | n,unicode }
                        <i class="hcha hcha-pie-chart"></i>
          </a>
     </div>
-    <div data-bind="css: { 'draggable-widget': true, 'disabled': !availableDraggableChart() },
+    <div data-bind="visible: ! $root.isLatest(),
+                    css: { 'draggable-widget': true, 'disabled': !availableDraggableChart() },
                     draggable: {data: draggableBar(), isEnabled: availableDraggableChart,
                     options: {'start': function(event, ui){lastWindowScrollPosition = $(window).scrollTop();$('.card-body').slideUp('fast');},
                               'stop': function(event, ui){$('.card-body').slideDown('fast', function(){$(window).scrollTop(lastWindowScrollPosition)});}}}"
@@ -180,13 +206,24 @@ ${ commonheader(_('Search'), "search", user, "80px") | n,unicode }
                        <i class="hcha hcha-bar-chart"></i>
          </a>
     </div>
-    <div data-bind="css: { 'draggable-widget': true, 'disabled': !availableDraggableNumbers() },
+    <div data-bind="visible: ! $root.isLatest(),
+                    css: { 'draggable-widget': true, 'disabled': !availableDraggableNumbers() },
                     draggable: {data: draggableLine(), isEnabled: availableDraggableNumbers,
                     options: {'start': function(event, ui){lastWindowScrollPosition = $(window).scrollTop();$('.card-body').slideUp('fast');},
                               'stop': function(event, ui){$('.card-body').slideDown('fast', function(){$(window).scrollTop(lastWindowScrollPosition)});}}}"
          title="${_('Line Chart')}" rel="tooltip" data-placement="top">
          <a data-bind="style: { cursor: $root.availableDraggableNumbers() ? 'move' : 'default' }">
                        <i class="hcha hcha-line-chart"></i>
+         </a>
+    </div>
+    <div data-bind="visible: $root.isLatest(),
+                    css: { 'draggable-widget': true, 'disabled': ! availableDraggableChart() },
+                    draggable: {data: draggableBucket(), isEnabled: availableDraggableChart,
+                    options: {'start': function(event, ui){lastWindowScrollPosition = $(window).scrollTop();$('.card-body').slideUp('fast');},
+                              'stop': function(event, ui){$('.card-body').slideDown('fast', function(){$(window).scrollTop(lastWindowScrollPosition)});}}}"
+         title="${_('Chart')}" rel="tooltip" data-placement="top">
+         <a data-bind="style: { cursor: $root.availableDraggableChart() ? 'move' : 'default' }">
+                       <i class="hcha hcha-bar-chart"></i>
          </a>
     </div>
     <div data-bind="css: { 'draggable-widget': true, 'disabled': false },
@@ -198,7 +235,8 @@ ${ commonheader(_('Search'), "search", user, "80px") | n,unicode }
                        <i class="fa fa-sitemap fa-rotate-270"></i>
          </a>
     </div>
-    <div data-bind="css: { 'draggable-widget': true, 'disabled': false },
+    <div data-bind="visible: ! $root.isLatest(),
+                    css: { 'draggable-widget': true, 'disabled': false },
                     draggable: {data: draggableHeatmap(), isEnabled: true,
                     options: {'start': function(event, ui){lastWindowScrollPosition = $(window).scrollTop();$('.card-body').slideUp('fast');},
                               'stop': function(event, ui){$('.card-body').slideDown('fast', function(){$(window).scrollTop(lastWindowScrollPosition)});}}}"
@@ -228,24 +266,29 @@ ${ commonheader(_('Search'), "search", user, "80px") | n,unicode }
       </%def>
 </%dashboard:layout_toolbar>
 
-${ dashboard.layout_skeleton() }
+<div class="player-toolbar" data-bind="visible: $root.isPlayerMode">
+  <div class="pull-right pointer" data-bind="visible: $root.isPlayerMode, click: function(){ $root.isPlayerMode(false); }"><i class="fa fa-times"></i></div>
+  <img src="${ static('desktop/art/icon_hue_48.png') }" />
+  <h4 data-bind="text: collection.label"></h4>
+  <form class="form-search" data-bind="submit: searchBtn">
+  <span data-bind="foreach: query.qs">
+    <input data-bind="clearable: q, typeahead: { target: q, source: $root.collection.template.fieldsNames, multipleValues: true, multipleValuesSeparator: ':', extraKeywords: 'AND OR TO', completeSolrRanges: true }, css:{'input-xlarge': $root.query.qs().length == 1, 'input-medium': $root.query.qs().length < 4, 'input-small': $root.query.qs().length >= 4}" maxlength="4096" type="text" class="search-query">
+    <!-- ko if: $parent.query.qs().length > 1 -->
+    <div class="pointer muted link" data-bind="click: $root.query.removeQ"><i class="fa fa-minus"></i></div>
+    <!-- /ko -->
+  </span>
+  <div class="pointer muted link" data-bind="click: $root.query.addQ"><i class="fa fa-plus"></i></div>
+  <div class="pointer muted link" data-bind="click: $root.searchBtn"><i class="fa fa-search" data-bind="visible: ! isRetrievingResults()"></i></div>
+  <!--[if !IE]> --><i class="fa fa-spinner fa-spin muted" data-bind="visible: isRetrievingResults()"></i><!-- <![endif]-->
+  <!--[if IE]><img src="${ static('desktop/art/spinner.gif') }" data-bind="visible: isRetrievingResults()"/><![endif]-->
+  </form>
+</div>
 
+
+${ dashboard.layout_skeleton() }
 
 <script type="text/html" id="empty-widget">
   ${ _('This is an empty widget.')}
-</script>
-
-
-<script type="text/html" id="hit-widget">
-  <!-- ko if: $root.getFacetFromQuery(id()) -->
-  <div class="row-fluid" data-bind="with: $root.getFacetFromQuery(id())">
-    <div data-bind="visible: $root.isEditing, with: $root.collection.getFacetById($parent.id())" style="margin-bottom: 20px">
-      ${ _('Label') }: <input type="text" data-bind="value: label" />
-    </div>
-
-    <span data-bind="text: query" />: <span data-bind="text: count" />
-  </div>
-  <!-- /ko -->
 </script>
 
 
@@ -253,11 +296,13 @@ ${ dashboard.layout_skeleton() }
   <div class="facet-field-tile">
     <div class="facet-field-cnt">
       <span class="facet-field-label facet-field-label-fixed-width facet-field-label-fixed-width-double facet-field-label-title">${ _('Settings') }</span>
+      <!--[if !IE]> --><i class="fa fa-spinner fa-spin" data-bind="visible: $root.isRetrievingResults()"></i><!-- <![endif]-->
+      <!--[if IE]><img src="${ static('desktop/art/spinner.gif') }" data-bind="visible: $root.isRetrievingResults()"/><![endif]-->
     </div>
 
     <div class="facet-field-cnt" data-bind="visible: properties.canRange">
       <span class="facet-field-label facet-field-label-fixed-width">${ _('Type') }</span>
-      <a href="javascript: void(0)" title="${ _('Toggle how to group the values') }" data-bind="click: $root.collection.toggleRangeFacet" data-loading-text="...">
+      <a href="javascript: void(0)" title="${ _('Toggle how to group the values') }" data-bind="click: $root.collection.toggleRangeFacet">
         <i class="fa" data-bind="css: { 'fa-arrows-h': type() == 'range', 'fa-circle': type() == 'field', 'fa-level-up': type() == 'range-up' }, attr: { title: type() == 'field' ? 'Range' : type() == 'range-up' ? 'Range and up' : 'Term' }"></i>
         <span data-bind="visible: type() == 'range'">${_('range')}</span>
         <span data-bind="visible: type() == 'range-up'">${_('range & up')}</span>
@@ -267,7 +312,7 @@ ${ dashboard.layout_skeleton() }
 
     <div class="facet-field-cnt">
       <span class="facet-field-label facet-field-label-fixed-width">${ _('Sorting') }</span>
-      <a href="javascript: void(0)" title="${ _('Toggle sort order') }" data-bind="click: $root.collection.toggleSortFacet" data-loading-text="...">
+      <a href="javascript: void(0)" title="${ _('Toggle sort order') }" data-bind="click: $root.collection.toggleSortFacet">
         <i class="fa" data-bind="css: { 'fa-caret-down': properties.sort() == 'desc', 'fa-caret-up': properties.sort() == 'asc' }"></i>
         <span data-bind="visible: properties.sort() == 'desc'">${_('descending')}</span>
         <span data-bind="visible: properties.sort() == 'asc'">${_('ascending')}</span>
@@ -294,11 +339,11 @@ ${ dashboard.layout_skeleton() }
       </div>
     <!-- /ko -->
 
-    <!-- ko if: type() == 'range' || type() == 'range-up' -->
+    <!-- ko if: type() == 'range' || type() == 'range-up' || (type() == 'nested' && typeof properties.min != "undefined") -->
       <!-- ko ifnot: properties.isDate() -->
         <div class="slider-cnt" data-bind="slider: {start: properties.min, end: properties.max, gap: properties.initial_gap, min: properties.initial_start, max: properties.initial_end, properties: properties, labels: SLIDER_LABELS}"></div>
       <!-- /ko -->
-      <!-- ko if: properties.isDate() -->
+      <!-- ko if: properties.isDate() && $root.collection.timeFilter && $root.collection.timeFilter.field && $root.collection.timeFilter.field() != field() -->
         <div data-bind="daterangepicker: {start: properties.start, end: properties.end, gap: properties.initial_gap, relatedgap: properties.gap, min: properties.min, max: properties.max}"></div>
         <br/>
       <!-- /ko -->
@@ -330,10 +375,12 @@ ${ dashboard.layout_skeleton() }
     <!-- /ko -->
     </div>
 
-    <!-- ko if: type() == 'pivot' -->
-      <div class="facet-field-tile" data-bind="visible: properties.scope() == 'tree' || properties.facets().length == 0">
+    <!-- ko if: type() == 'pivot' || type() == 'nested' -->
+      <div class="facet-field-tile" data-bind="visible: properties.scope() == 'tree' || (type() == 'pivot' && properties.facets().length == 0) || (type() == 'nested' && properties.facets().length < 3)">
         <div class="facet-field-cnt">
-          <span class="facet-field-label facet-field-label-fixed-width facet-field-label-fixed-width-double facet-field-label-title">${ _('Add a dimension') }</span>
+          <span class="facet-field-label facet-field-label-fixed-width facet-field-label-fixed-width-double facet-field-label-title">
+            ${ _('Add a dimension') }
+          </span>
         </div>
 
         <div class="facet-field-cnt">
@@ -341,9 +388,20 @@ ${ dashboard.layout_skeleton() }
             <span class="facet-field-label facet-field-label-fixed-width">
               ${ _('Field') }
             </span>
-            <select data-bind="options: $root.collection.template.fieldsNames, value: properties.facets_form.field, optionsCaption: '${ _('Choose...') }'"></select>
+            <select data-bind="options: $root.collection.template.fieldsNames, value: properties.facets_form.field, optionsCaption: '${ _ko('Choose...') }'"></select>
           </span>
         </div>
+
+        <!-- ko if: type() == 'nested' -->
+        <div class="facet-field-cnt">
+          <span class="spinedit-cnt">
+            <span class="facet-field-label facet-field-label-fixed-width">
+              ${ _('Metric') }
+            </span>
+            <select data-bind="options: HIT_OPTIONS, optionsText: 'label', optionsValue: 'value', value: properties.facets_form.aggregate"></select>
+          </span>
+        </div>
+        <!-- /ko -->
 
         <div class="facet-field-cnt">
           <span class="spinedit-cnt">
@@ -376,10 +434,10 @@ ${ dashboard.layout_skeleton() }
     <!--[if IE]><img src="${ static('desktop/art/spinner.gif') }" /><![endif]-->
   </div>
 
-  <!-- ko if: $root.getFacetFromQuery(id()) -->
+  <!-- ko if: $root.getFacetFromQuery(id()).has_data() -->
   <div class="row-fluid" data-bind="with: $root.getFacetFromQuery(id())">
     <div data-bind="visible: $root.isEditing, with: $root.collection.getFacetById($parent.id())" style="margin-bottom: 20px">
-      <span data-bind="template: { name: 'facet-toggle', afterRender: function(){ $root.getWidgetById($parent.id).isLoading(false); } }">
+      <span data-bind="template: { name: 'facet-toggle', afterRender: function(){ $root.getWidgetById($parent.id()).isLoading(false); } }">
       </span>
     </div>
     <div data-bind="with: $root.collection.getFacetById($parent.id())">
@@ -388,15 +446,19 @@ ${ dashboard.layout_skeleton() }
           <div class="trigger-exclude">
               <!-- ko if: $index() < $parent.properties.limit() -->
                 <!-- ko if: ! $data.selected -->
-                  <a class="pointer" data-bind="text: $data.value, click: function(){ $root.query.toggleFacet({facet: $data, widget_id: $parent.id()}) }"></a>
-                  <span class="pointer counter" data-bind="text: ' (' + $data.count + ')', click: function(){ $root.query.toggleFacet({facet: $data, widget_id: $parent.id()}) }"></span>
                   <a class="exclude pointer" data-bind="click: function(){ $root.query.toggleFacet({facet: $data, widget_id: $parent.id(), 'exclude': true}) }" title="${ _('Exclude this value') }"><i class="fa fa-minus"></i></a>
+                  <div class="hellip">
+                    <a class="pointer" data-bind="html: prettifyDate($data.value), click: function(){ $root.query.toggleFacet({facet: $data, widget_id: $parent.id()}) }, attr: {'title': $data.value + ' (' + $data.count + ')'}"></a>
+                    <span class="pointer counter" data-bind="text: ' (' + $data.count + ')', click: function(){ $root.query.toggleFacet({facet: $data, widget_id: $parent.id()}) }"></span>
+                  </div>
                 <!-- /ko -->
                 <!-- ko if: $data.selected -->
                   <span class="pointer" data-bind="click: function(){ $root.query.toggleFacet({facet: $data, widget_id: $parent.id()}) }">
-                    <strong data-bind="text: $data.value"></strong>
-                    <a class="pointer" data-bind="visible: ! exclude"><i class="fa fa-times"></i></a>
-                    <a class="pointer" data-bind="visible: exclude"><i class="fa fa-plus"></i></a>
+                    <a class="include pointer" data-bind="visible: ! exclude"><i class="fa fa-times"></i></a>
+                    <a class="include pointer" data-bind="visible: exclude"><i class="fa fa-plus"></i></a>
+                    <div class="hellip">
+                      <strong data-bind="html: prettifyDate($data.value), attr: {'title': $data.value}"></strong>
+                    </div>
                   </span>
                 <!-- /ko -->
               <!-- /ko -->
@@ -423,15 +485,19 @@ ${ dashboard.layout_skeleton() }
         <div data-bind="foreach: $parent.counts">
           <div class="trigger-exclude">
               <!-- ko if: ! selected -->
-                <a class="pointer" data-bind="text: $data.is_single_unit_gap ? $data.from : $data.from + ' - ' + $data.to, click: function(){ $root.query.selectRangeFacet({count: $data.value, widget_id: $parent.id(), from: $data.from, to: $data.to, cat: $data.field}) }"></a>
-                <span class="pointer counter" data-bind="text: ' (' + $data.value + ')', click: function(){ $root.query.selectRangeFacet({count: $data.value, widget_id: $parent.id(), from: $data.from, to: $data.to, cat: $data.field}) }"></span>
                 <a class="exclude pointer" data-bind="click: function(){ $root.query.selectRangeFacet({count: $data.value, widget_id: $parent.id(), from: $data.from, to: $data.to, cat: $data.field, 'exclude': true}) }" title="${ _('Exclude this value') }"><i class="fa fa-minus"></i></a>
+                <div class="hellip">
+                  <a class="pointer" data-bind="html: $data.is_single_unit_gap ? prettifyDate($data.from, $parent, $data.to) : prettifyDateRange($data.from, $data.to, $parent, false), click: function(){ $root.query.selectRangeFacet({count: $data.value, widget_id: $parent.id(), from: $data.from, to: $data.to, cat: $data.field}) }, attr: {'title': ($data.is_single_unit_gap ? $data.from : $data.from + ' - ' + $data.to) + ' (' + $data.value + ')'}"></a>
+                  <span class="pointer counter" data-bind="text: ' (' + $data.value + ')', click: function(){ $root.query.selectRangeFacet({count: $data.value, widget_id: $parent.id(), from: $data.from, to: $data.to, cat: $data.field}) }"></span>
+                </div>
               <!-- /ko -->
               <!-- ko if: selected -->
                 <span class="pointer" data-bind="click: function(){ $root.query.selectRangeFacet({count: $data.value, widget_id: $parent.id(), from: $data.from, to: $data.to, cat: $data.field}) }">
-                  <strong data-bind="text: $data.is_single_unit_gap ? $data.from : $data.from + ' - ' + $data.to"></strong>
-                  <a class="pointer" data-bind="visible: ! exclude"><i class="fa fa-times"></i></a>
-                  <a class="pointer" data-bind="visible: exclude"><i class="fa fa-plus"></i></a>
+                  <a class="include pointer" data-bind="visible: ! exclude"><i class="fa fa-times"></i></a>
+                  <a class="include pointer" data-bind="visible: exclude"><i class="fa fa-plus"></i></a>
+                  <div class="hellip">
+                    <strong data-bind="html: $data.is_single_unit_gap ? prettifyDate($data.from, $parent, $data.to) : prettifyDateRange($data.from, $data.to, $parent, false), attr: {'title': ($data.is_single_unit_gap ? $data.from : $data.from + ' - ' + $data.to) + ' (' + $data.value + ')'}"></strong>
+                  </div>
                 </span>
               <!-- /ko -->
           </div>
@@ -441,15 +507,19 @@ ${ dashboard.layout_skeleton() }
         <div data-bind="foreach: $parent.counts">
           <div class="trigger-exclude">
               <!-- ko if: ! selected -->
-                <a class="pointer" data-bind="text: $data.from + ($data.is_up ? ' & Up' : ' & Less'), click: function(){ $root.query.selectRangeUpFacet({count: $data.value, widget_id: $parent.id(), from: $data.from, to: $data.to, cat: $data.field, is_up: $data.is_up}) }"></a>
-                <span class="pointer counter" data-bind="text: ' (' + $data.total_counts + ')', click: function(){ $root.query.selectRangeUpFacet({count: $data.value, widget_id: $parent.id(), from: $data.from, to: $data.to, cat: $data.field, is_up: $data.is_up}) }"></span>
                 <a class="exclude pointer" data-bind="click: function(){ $root.query.selectRangeUpFacet({count: $data.value, widget_id: $parent.id(), from: $data.from, to: $data.to, cat: $data.field, 'exclude': true, is_up: $data.is_up}) }" title="${ _('Exclude this value') }"><i class="fa fa-minus"></i></a>
+                <div class="hellip">
+                  <a class="pointer" data-bind="html: prettifyDate($data.from, $parent) + ($data.is_up ? ' & Up' : ' & Less'), click: function(){ $root.query.selectRangeUpFacet({count: $data.value, widget_id: $parent.id(), from: $data.from, to: $data.to, cat: $data.field, is_up: $data.is_up}) }, attr: {'title': $data.from + ($data.is_up ? ' & Up' : ' & Less') + ' (' + $data.total_counts + ')'}"></a>
+                  <span class="pointer counter" data-bind="text: ' (' + $data.total_counts + ')', click: function(){ $root.query.selectRangeUpFacet({count: $data.value, widget_id: $parent.id(), from: $data.from, to: $data.to, cat: $data.field, is_up: $data.is_up}) }"></span>
+                </div>
               <!-- /ko -->
               <!-- ko if: selected -->
                 <span class="pointer" data-bind="click: function(){ $root.query.selectRangeUpFacet({count: $data.value, widget_id: $parent.id(), from: $data.from, to: $data.to, cat: $data.field, is_up: $data.is_up}) }">
-                  <strong data-bind="text: $data.from + ($data.is_up ? ' & Up' : ' & Less')"></strong>
-                  <a class="pointer" data-bind="visible: ! exclude"><i class="fa fa-times"></i></a>
-                  <a class="pointer" data-bind="visible: exclude"><i class="fa fa-plus"></i></a>
+                  <a class="include pointer" data-bind="visible: ! exclude"><i class="fa fa-times"></i></a>
+                  <a class="include pointer" data-bind="visible: exclude"><i class="fa fa-plus"></i></a>
+                  <div class="hellip">
+                    <strong data-bind="html: prettifyDate($data.from, $parent) + ($data.is_up ? ' & Up' : ' & Less')"></strong>
+                  </div>
                 </span>
               <!-- /ko -->
           </div>
@@ -488,11 +558,11 @@ ${ dashboard.layout_skeleton() }
           </a>
           <strong>${_('Field Name')}</strong>
         </div>
-        <div class="fields-list" data-bind="foreach: $root.collection.template.filteredAttributeFields" style="max-height: 230px; overflow-y: auto; padding-left: 4px">
-          <div style="margin-bottom: 3px">
+        <div class="fields-list" data-bind="foreach: $root.collection.template.filteredAttributeFields">
+          <div style="margin-bottom: 3px; white-space: nowrap">
+            <i class="fa fa-question-circle pull-right muted pointer analysis" data-bind="click: function() { $root.fieldAnalysesName(name()); $root.showFieldAnalysis(); }, attr:{'title': '${ _ko('Click to analyze field') } ' + name()}"></i>
             <input type="checkbox" data-bind="checkedValue: name, checked: $root.collection.template.fieldsSelected" style="margin: 0" />
-            <div data-bind="text: name, css:{'field-selector': true, 'hoverable': $root.collection.template.fieldsSelected.indexOf(name()) > -1}, click: highlightColumn"></div>
-            <i class="fa fa-question-circle pull-right muted pointer analysis" title="${ _('Click to analyse field') }" data-bind="click: function() { $root.fieldAnalysesName(name()); $root.showFieldAnalysis(); }"></i>
+            <div data-bind="text: name, css:{'field-selector': true, 'hoverable': $root.collection.template.fieldsSelected.indexOf(name()) > -1}, click: highlightColumn" style="margin-right: 10px"></div>
           </div>
         </div>
         <div data-bind="visible: $root.collection.template.filteredAttributeFields().length == 0" style="padding-left: 4px; padding-top: 5px; font-size: 40px; color: #CCC">
@@ -502,60 +572,46 @@ ${ dashboard.layout_skeleton() }
     </div>
 
     <div>
-      <div class="widget-spinner" data-bind="visible: $root.isRetrievingResults()">
+      <div class="widget-spinner" data-bind="visible: ! $root.hasRetrievedResults()">
         <!--[if !IE]> --><i class="fa fa-spinner fa-spin"></i><!-- <![endif]-->
         <!--[if IE]><img src="${ static('desktop/art/spinner.gif') }" /><![endif]-->
       </div>
 
-      <div data-bind="visible: !$root.isRetrievingResults() && $root.results().length == 0">
-        </br>
+      <div data-bind="visible: $root.hasRetrievedResults() && $root.results().length == 0">
+        <br/>
         ${ _('Your search did not match any documents.') }
       </div>
 
-      <div data-bind="visible: !$root.isRetrievingResults() && $root.results().length > 0">
+      <div data-bind="visible: $root.hasRetrievedResults() && $root.results().length > 0">
         <!-- ko if: $root.response().response -->
-          <div data-bind="template: {name: 'resultset-pagination', data: $root.response() }" style="padding: 8px; color: #666"></div>
+          <div data-bind="template: {name: 'resultset-pagination', data: $root.response()}" style="padding: 8px; color: #666"></div>
         <!-- /ko -->
 
         <div id="result-main" style="overflow-x: auto">
-          <table id="result-container" data-bind="visible: ! $root.isRetrievingResults()" style="margin-top: 0; width: 100%">
+          <table id="result-container" data-bind="visible: $root.hasRetrievedResults()" style="margin-top: 0; width: 100%">
             <thead>
               <tr data-bind="visible: $root.collection.template.fieldsSelected().length > 0, template: {name: 'result-sorting'}">
               </tr>
               <tr data-bind="visible: $root.collection.template.fieldsSelected().length == 0">
                 <th style="width: 18px">&nbsp;</th>
-                <th>${ ('Document') }</th>
+                <th>${ _('Document') }</th>
               </tr>
             </thead>
-            <tbody data-bind="foreach: { data: $root.results, as: 'doc'}" class="result-tbody">
-              <tr class="result-row">
+            <tbody data-bind="foreach: {data: $root.results, as: 'doc'}" class="result-tbody">
+              <tr class="result-row" data-bind="style: {'backgroundColor': $index() % 2 == 0 ? '#FFF': '#F6F6F6'}">
                 <td>
                   <a href="javascript:void(0)" data-bind="click: toggleDocDetails">
-                    <i class="fa" data-bind="css: {'fa-caret-right' : ! doc.showDetails(), 'fa-caret-down': doc.showDetails() }"></i>
+                    <i class="fa" data-bind="css: {'fa-caret-right' : ! doc.showDetails(), 'fa-caret-down': doc.showDetails()}"></i>
                   </a>
                 </td>
                 <!-- ko foreach: row -->
                   <td data-bind="html: $data"></td>
                 <!-- /ko -->
               </tr>
-              <tr data-bind="visible: doc.showDetails">
+              <tr data-bind="visible: doc.showDetails" class="show-details">
+                <td>&nbsp;</td>
                 <td data-bind="attr: {'colspan': $root.collection.template.fieldsSelected().length > 0 ? $root.collection.template.fieldsSelected().length + 1 : 2}">
-                  <!-- ko if: $data.details().length == 0 -->
-                    <!--[if !IE]> --><i class="fa fa-spinner fa-spin"></i><!-- <![endif]-->
-                    <!--[if IE]><img src="${ static('desktop/art/spinner.gif') }" /><![endif]-->
-                  <!-- /ko -->
-                  <!-- ko if: $data.details().length > 0 -->
-                    <div class="document-details">
-                      <table>
-                        <tbody data-bind="foreach: details">
-                          <tr>
-                             <th style="text-align: left; white-space: nowrap; vertical-align:top; padding-right:20px" data-bind="text: key"></th>
-                             <td width="100%" data-bind="text: value"></td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  <!-- /ko -->
+                  <span data-bind="template: {name: 'document-details', data: $data}"></span>
                 </td>
               </tr>
             </tbody>
@@ -615,7 +671,7 @@ ${ dashboard.layout_skeleton() }
       <div class="widget-section widget-html-section" style="display: none">
         <div class="row-fluid">
           <div class="span9">
-            <textarea data-bind="codemirror: {data: $root.collection.template.template, lineNumbers: true, htmlMode: true, mode: 'text/html' }" data-template="true"></textarea>
+            <textarea data-bind="codemirror: {data: $root.collection.template.template, lineNumbers: true, htmlMode: true, mode: 'text/html', stripScript: true }" data-template="true"></textarea>
           </div>
           <div class="span3">
             <h5 class="editor-title">${_('Available Fields')}</h5>
@@ -661,8 +717,8 @@ ${ dashboard.layout_skeleton() }
     <!-- /ko -->
 
     <div id="result-main" style="overflow-x: auto">
-      <div data-bind="visible: ! $root.isRetrievingResults() && $root.results().length == 0">
-        </br>
+      <div data-bind="visible: $root.hasRetrievedResults() && $root.results().length == 0">
+        <br/>
         ${ _('Your search did not match any documents.') }
       </div>
 
@@ -670,11 +726,31 @@ ${ dashboard.layout_skeleton() }
         <div data-bind="template: {name: 'resultset-pagination', data: $root.response() }"></div>
       <!-- /ko -->
 
-      <div id="result-container" data-bind="foreach: $root.results">
-        <div class="result-row" data-bind="html: $data"></div>
-      </div>
 
-      <div class="widget-spinner" data-bind="visible: $root.isRetrievingResults()">
+      <table id="result-container" data-bind="visible: $root.hasRetrievedResults()" style="margin-top: 0; width: 100%">
+        <thead>
+          <tr>
+            <th>&nbsp;</th>
+          </tr>
+        </thead>
+        <tbody data-bind="foreach: {data: $root.results, as: 'doc'}" class="result-tbody">
+          <tr data-bind="style: {'backgroundColor': $index() % 2 == 0 ? '#FFF': '#F6F6F6'}">
+            <td><div data-bind="html: content" style="margin-bottom: -20px"></div></td>
+          </tr>
+          <tr>
+            <td class="show-details-icon pointer" data-bind="click: toggleDocDetails">
+              <i class="fa" data-bind="css: {'fa-caret-down' : ! doc.showDetails(), 'fa-caret-up': doc.showDetails()}"></i>
+            </td>
+          </tr>
+          <tr data-bind="visible: doc.showDetails" class="show-details">
+            <td data-bind="attr: {'colspan': $root.collection.template.fieldsSelected().length > 0 ? $root.collection.template.fieldsSelected().length + 1 : 2}">
+              <span data-bind="template: {name: 'document-details', data: $data}"></span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="widget-spinner" data-bind="visible: ! $root.hasRetrievedResults()">
         <!--[if !IE]> --><i class="fa fa-spinner fa-spin"></i><!-- <![endif]-->
         <!--[if IE]><img src="${ static('desktop/art/spinner.gif') }" /><![endif]-->
       </div>
@@ -682,6 +758,48 @@ ${ dashboard.layout_skeleton() }
   <!-- /ko -->
 </script>
 
+
+<script type="text/html" id="document-details">
+  <!-- ko if: $data.details().length == 0 -->
+    <!--[if !IE]> --><i class="fa fa-spinner fa-spin"></i><!-- <![endif]-->
+    <!--[if IE]><img src="${ static('desktop/art/spinner.gif') }" /><![endif]-->
+  <!-- /ko -->
+  <!-- ko if: $data.details().length > 0 -->
+    <div class="document-details-actions pull-left" data-bind="visible: ${ 'true' if can_edit_index else 'false' } || externalLink()">
+      <a href="javascript:void(0)" data-bind="visible: ! showEdit(), click: function() { showEdit(true); }" title="${ _('Edit this document') }">
+        <i class="fa fa-edit fa-fw"></i>
+      </a>
+      <a href="javascript:void(0)" data-bind="visible: showEdit(), click: function(data, e) { $(e.currentTarget).parent().css('marginTop', '8px'); $root.getDocument($data); showEdit(false); }" title="${ _('Undo changes') }">
+        <i class="fa fa-undo fa-fw"></i>
+      </a>
+      <a href="javascript:void(0)" data-bind="visible: showEdit() && originalDetails() != ko.toJSON(details), click: $root.updateDocument" title="${ _('Update this document') }">
+        <i class="fa fa-save fa-fw"></i>
+      </a>
+      <a href="javascript:void(0)" data-bind="visible: externalLink(), attr: { href: externalLink}" target="_blank" title="${ _('Show original document') }">
+        <i class="fa fa-external-link fa-fw"></i>
+      </a>
+    </div>
+    <div class="document-details pull-left">
+      <table>
+        <tbody data-bind="foreach: details">
+          <tr data-bind="css: {'readonly': ! $parent.showEdit()}">
+             <th class="grid-th" data-bind="text: key"></th>
+             <td width="100%">
+               <span data-bind="text: value, visible: ! $parent.showEdit()"></span>
+               <input data-bind="value: value, visible: $parent.showEdit, valueUpdate: 'afterkeydown',
+               click: function(detail, e){
+                var target = $(e.currentTarget);
+                target.parents('.show-details').find('.document-details-actions').animate({
+                  'marginTop': (target.position().top - target.parents('table').position().top) + 'px'
+                }, 200)
+               }" class="input-xxlarge" style="width: 600px" />
+             </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  <!-- /ko -->
+</script>
 
 <script type="text/html" id="result-sorting">
 <th style="width: 18px">&nbsp;</th>
@@ -767,33 +885,42 @@ ${ dashboard.layout_skeleton() }
     <!--[if IE]><img src="${ static('desktop/art/spinner.gif') }" /><![endif]-->
   </div>
 
-  <!-- ko if: $root.getFacetFromQuery(id()) -->
+  <!-- ko if: $root.getFacetFromQuery(id()).has_data() -->
   <div class="row-fluid" data-bind="with: $root.getFacetFromQuery(id())">
     <div data-bind="visible: $root.isEditing, with: $root.collection.getFacetById($parent.id())" style="margin-bottom: 20px">
       <span data-bind="template: { name: 'facet-toggle' }">
       </span>
     </div>
 
-    <div style="padding-bottom: 10px; text-align: right; padding-right: 20px" data-bind="visible: counts.length > 0">
+    <div style="padding-bottom: 10px; text-align: right; padding-right: 20px" data-bind="visible: counts().length > 0">
       <span data-bind="with: $root.collection.getFacetById($parent.id())">
-        <span class="facet-field-label">${ _('Interval') }</span>
-         <select class="input-small" data-bind="options: $root.intervalOptions,
+        <span class="facet-field-label">${ _('Chart Type') }</span>
+        <select class="input-small" data-bind="options: $root.timelineChartTypes,
                        optionsText: 'label',
                        optionsValue: 'value',
-                       value: properties.gap"></select>&nbsp;
+                       value: properties.timelineChartType">
+        </select>&nbsp;
+        <span class="facet-field-label">${ _('Interval') }</span>
+        <select class="input-small" data-bind="options: $root.intervalOptions,
+                       optionsText: 'label',
+                       optionsValue: 'value',
+                       value: properties.gap">
+        </select>&nbsp;
       </span>
       <span class="facet-field-label">${ _('Zoom') }</span>
       <a href="javascript:void(0)" data-bind="click: $root.collection.rangeZoomOut"><i class="fa fa-search-minus"></i> ${ _('reset') }</a>
       <span class="facet-field-label" data-bind="visible: $root.query.multiqs().length > 1">${ _('Group by') }</span>
       <select class="input-medium" data-bind="visible: $root.query.multiqs().length > 1, options: $root.query.multiqs, optionsValue: 'id', optionsText: 'label', value: $root.query.selectedMultiq"></select>
     </div>
+
     <!-- ko if: $root.collection.getFacetById($parent.id()) -->
-    <div data-bind="timelineChart: {datum: {counts: counts, extraSeries: (typeof extraSeries != 'undefined' ? extraSeries : []), widget_id: $parent.id(), label: label}, stacked: $root.collection.getFacetById($parent.id()).properties.stacked(), field: field, label: label, transformer: timelineChartDataTransformer,
-      fqs: $root.query.fqs,
-      onSelectRange: function(from, to){ viewModel.collection.selectTimelineFacet({from: from, to: to, cat: field, widget_id: $parent.id()}) },
-      onStateChange: function(state){ $root.collection.getFacetById($parent.id()).properties.stacked(state.stacked); },
-      onClick: function(d){ viewModel.query.selectRangeFacet({count: d.obj.value, widget_id: $parent.id(), from: d.obj.from, to: d.obj.to, cat: d.obj.field}) },
-      onComplete: function(){ viewModel.getWidgetById(id).isLoading(false) }}" />
+      <div data-bind="timelineChart: {datum: {counts: counts(), extraSeries: extraSeries(), widget_id: $parent.id(), label: label()}, stacked: $root.collection.getFacetById($parent.id()).properties.stacked(), field: field, label: label(), transformer: timelineChartDataTransformer,
+        type: $root.collection.getFacetById($parent.id()).properties.timelineChartType,
+        fqs: $root.query.fqs,
+        onSelectRange: function(from, to){ $root.collection.selectTimelineFacet({from: from, to: to, cat: field, widget_id: $parent.id()}) },
+        onStateChange: function(state){ $root.collection.getFacetById($parent.id()).properties.stacked(state.stacked); },
+        onClick: function(d){ $root.query.selectRangeFacet({count: d.obj.value, widget_id: $parent.id(), from: d.obj.from, to: d.obj.to, cat: d.obj.field}) },
+        onComplete: function(){ $root.getWidgetById($parent.id()).isLoading(false) }}" />
     <!-- /ko -->
   </div>
   <!-- /ko -->
@@ -806,7 +933,7 @@ ${ dashboard.layout_skeleton() }
     <!--[if IE]><img src="${ static('desktop/art/spinner.gif') }" /><![endif]-->
   </div>
 
-  <!-- ko if: $root.getFacetFromQuery(id()) -->
+  <!-- ko if: $root.getFacetFromQuery(id()).has_data() -->
   <div class="row-fluid" data-bind="with: $root.getFacetFromQuery(id())">
     <div data-bind="visible: $root.isEditing, with: $root.collection.getFacetById($parent.id())" style="margin-bottom: 20px">
       <span data-bind="template: { name: 'facet-toggle' }">
@@ -814,7 +941,7 @@ ${ dashboard.layout_skeleton() }
     </div>
 
     <div data-bind="with: $root.collection.getFacetById($parent.id())">
-      <!-- ko if: type() == 'range' || type() == 'range-up' -->
+      <!-- ko if: properties.canRange -->
         <div style="padding-bottom: 10px; text-align: right; padding-right: 20px">
           <span class="facet-field-label">${ _('Zoom') }</span>
           <a href="javascript:void(0)" data-bind="click: $root.collection.rangeZoomOut"><i class="fa fa-search-minus"></i> ${ _('reset') }</a>
@@ -822,14 +949,15 @@ ${ dashboard.layout_skeleton() }
       <!-- /ko -->
     </div>
 
-    <div data-bind="barChart: {datum: {counts: counts, widget_id: $parent.id(), label: label}, stacked: false, field: field, label: label,
+    <!-- ko if: $root.collection.getFacetById($parent.id()) -->
+    <div data-bind="barChart: {datum: {counts: counts(), widget_id: $parent.id(), label: label()}, stacked: $root.collection.getFacetById($parent.id()).properties.stacked(), field: field, label: label(),
       fqs: $root.query.fqs,
-      transformer: barChartDataTransformer,
-      onStateChange: function(state){ },
+      transformer: ($data.type == 'range-up' ? barChartRangeUpDataTransformer : barChartDataTransformer),
+      onStateChange: function(state){ $root.collection.getFacetById($parent.id()).properties.stacked(state.stacked); },
       onClick: function(d) {
         if (d.obj.field != undefined) {
           if ($data.type == 'range-up') {
-            viewModel.query.selectRangeUpFacet({count: d.obj.value, widget_id: d.obj.widget_id, from: d.obj.from, to: d.obj.to, cat: d.obj.field, 'exclude': false, is_up: true});
+            viewModel.query.selectRangeUpFacet({count: d.obj.value, widget_id: d.obj.widget_id, from: d.obj.from, to: d.obj.to, cat: d.obj.field, 'exclude': false, is_up: d.obj.is_up});
           } else {
             viewModel.query.selectRangeFacet({count: d.obj.value, widget_id: d.obj.widget_id, from: d.obj.from, to: d.obj.to, cat: d.obj.field});
           }
@@ -837,9 +965,185 @@ ${ dashboard.layout_skeleton() }
           viewModel.query.toggleFacet({facet: d.obj, widget_id: d.obj.widget_id});
         }
       },
-      onSelectRange: function(from, to){ viewModel.collection.selectTimelineFacet({from: from, to: to, cat: field, widget_id: id}) },
-      onComplete: function(){ viewModel.getWidgetById(id).isLoading(false) } }"
+      onSelectRange: function(from, to){ viewModel.collection.selectTimelineFacet({from: from, to: to, cat: field, widget_id: $parent.id()}) },
+      onComplete: function(){ viewModel.getWidgetById($parent.id()).isLoading(false) } }"
     />
+    <!-- /ko -->
+  </div>
+  <!-- /ko -->
+</script>
+
+
+<script type="text/html" id="bucket-widget">
+  <div class="widget-spinner" data-bind="visible: isLoading()">
+    <!--[if !IE]> --><i class="fa fa-spinner fa-spin"></i><!-- <![endif]-->
+    <!--[if IE]><img src="${ static('desktop/art/spinner.gif') }" /><![endif]-->
+  </div>
+
+  <!-- ko if: $root.getFacetFromQuery(id()).has_data() -->
+  <div class="row-fluid" data-bind="with: $root.getFacetFromQuery(id())">
+    <div data-bind="with: $root.collection.getFacetById($parent.id())">
+      <span data-bind="foreach: properties.facets, visible: !$parents[1].isLoading()">
+        <div class="filter-box">
+          <div class="title">
+            <a data-bind="click: function() { $root.collection.removePivotFacetValue({'pivot_facet': $parent, 'value': $data}); }" class="pull-right" href="javascript:void(0)">
+              <i class="fa fa-times"></i>
+            </a>
+            <div class="hit-title" data-bind="text: field, attr: {'title': field}"></div>
+            <div class="clearfix"></div>
+          </div>
+
+          <div class="content">
+            <div class="facet-field-cnt">
+              <span class="facet-field-label">${ _('Metric') }</span>
+              <select data-bind="options: HIT_OPTIONS, optionsText: 'label', optionsValue: 'value', value: aggregate" class="hit-options"></select>
+            </div>
+
+            <div class="facet-field-cnt" data-bind="visible: $root.isEditing()">
+              <span class="spinedit-cnt">
+                <span class="facet-field-label">
+                  ${ _('Limit') }
+                </span>
+                <input type="text" class="input-medium" data-bind="spinedit: limit"/>
+              </span>
+            </div>
+
+            <div class="facet-field-cnt" data-bind="visible: $root.isEditing()">
+              <span class="spinedit-cnt">
+                <span class="facet-field-label">
+                  ${ _('Min Count') }
+                </span>
+                <input type="text" class="input-medium" data-bind="spinedit: mincount"/>
+              </span>
+            </div>
+          </div>
+        </div>
+      </span>
+      <div class="filter-box" data-bind="visible: $root.isEditing() && properties.facets().length < 2" style="opacity: 0.7">
+        <div class="title" style="border: 1px dashed #d8d8d8; border-bottom: none">
+          <a data-bind="visible: ko.toJSON(properties.facets_form.field) != '', click: $root.collection.addPivotFacetValue" class="pull-right" href="javascript:void(0)">
+            <i class="fa fa-plus"></i> ${ _('Add') }
+          </a>
+          <select data-bind="options: $root.collection.template.fieldsNames, value: properties.facets_form.field, optionsCaption: '${ _ko('Field...') }'" class="hit-options" style="margin-bottom: 0; height: 20px"></select>
+          <div class="clearfix"></div>
+        </div>
+        <div class="content" style="border: 1px dashed #d8d8d8; border-top: none">
+          <div class="facet-field-cnt">
+            <span class="spinedit-cnt">
+              <span class="facet-field-label">
+                ${ _('Metric') }
+              </span>
+              <select data-bind="options: HIT_OPTIONS, optionsText: 'label', optionsValue: 'value', value: properties.facets_form.aggregate" class="hit-options"></select>
+            </span>
+          </div>
+
+          <div class="facet-field-cnt">
+            <span class="spinedit-cnt">
+              <span class="facet-field-label">
+                ${ _('Limit') }
+              </span>
+              <input type="text" class="input-medium" data-bind="spinedit: properties.facets_form.limit"/>
+            </span>
+          </div>
+
+          <div class="facet-field-cnt">
+            <span class="spinedit-cnt">
+              <span class="facet-field-label">
+                ${ _('Min Count') }
+              </span>
+              <input type="text" class="input-medium" data-bind="spinedit: properties.facets_form.mincount"/>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="pull-right" style="margin-top: 40px">
+
+        <div class="inline-block" style="padding-bottom: 10px; padding-right: 20px">
+          <span class="facet-field-label">${ _('Sorting') }</span>
+          <a href="javascript: void(0)" title="${ _('Toggle sort order') }" data-bind="click: $root.collection.toggleSortFacet">
+            <i class="fa" data-bind="css: { 'fa-caret-down': properties.sort() == 'desc', 'fa-caret-up': properties.sort() == 'asc' }"></i>
+            <span data-bind="visible: properties.sort() == 'desc'">${_('descending')}</span>
+            <span data-bind="visible: properties.sort() == 'asc'">${_('ascending')}</span>
+          </a>
+        </div>
+
+
+      <!-- ko if: properties.isDate -->
+        <div class="inline-block" style="padding-bottom: 10px; padding-right: 20px">
+          <span class="facet-field-label">${ _('Chart Type') }</span>
+          <select class="input-small" data-bind="options: $root.timelineChartTypes,
+                       optionsText: 'label',
+                       optionsValue: 'value',
+                       value: properties.timelineChartType">
+          </select>
+        </div>
+        <div class="inline-block" style="padding-bottom: 10px; padding-right: 20px">
+          <span class="facet-field-label">${ _('Interval') }</span>
+          <select class="input-small" data-bind="options: $root.intervalOptions,
+                         optionsText: 'label',
+                         optionsValue: 'value',
+                         value: properties.gap">
+          </select>
+        </div>
+      <!-- /ko -->
+
+      <!-- ko if: properties.canRange -->
+        <div class="inline-block" style="padding-bottom: 10px; padding-right: 20px">
+          <span class="facet-field-label">${ _('Zoom') }</span>
+          <a href="javascript:void(0)" data-bind="click: $root.collection.rangeZoomOut"><i class="fa fa-search-minus"></i> ${ _('reset') }</a>
+        </div>
+      <!-- /ko -->
+      </div>
+      <div class="clearfix"></div>
+    </div>
+
+    <!-- ko if: $root.collection.getFacetById($parent.id()) -->
+      <!-- ko if: dimension() == 1 -->
+        <div data-bind="barChart: {datum: {counts: counts(), widget_id: $parent.id(), label: label()}, stacked: $root.collection.getFacetById($parent.id()).properties.stacked(), field: field, label: label(),
+          fqs: $root.query.fqs,
+          transformer: ($data.type == 'range-up' ? barChartRangeUpDataTransformer : barChartDataTransformer),
+          onStateChange: function(state){ $root.collection.getFacetById($parent.id()).properties.stacked(state.stacked); },
+          onClick: function(d) {
+            if (d.obj.field != undefined) {
+              if ($data.type == 'range-up') {
+                viewModel.query.selectRangeUpFacet({count: d.obj.value, widget_id: d.obj.widget_id, from: d.obj.from, to: d.obj.to, cat: d.obj.field, 'exclude': false, is_up: d.obj.is_up});
+              } else {
+                viewModel.query.selectRangeFacet({count: d.obj.value, widget_id: d.obj.widget_id, from: d.obj.from, to: d.obj.to, cat: d.obj.field});
+              }
+            } else {
+              viewModel.query.toggleFacet({facet: d.obj, widget_id: d.obj.widget_id});
+            }
+          },
+          onSelectRange: function(from, to){ viewModel.collection.selectTimelineFacet({from: from, to: to, cat: field, widget_id: $parent.id()}) },
+          onComplete: function(){ viewModel.getWidgetById($parent.id()).isLoading(false) } }"
+        />
+      <!-- /ko -->
+
+      <!-- ko if: dimension() == 2 -->
+        <div data-bind="barChart: {datum: {counts: counts(), widget_id: $parent.id(), label: label()}, stacked: $root.collection.getFacetById($parent.id()).properties.stacked(),
+          isPivot: true,
+          fqs: $root.query.fqs,
+          transformer: pivotChartDataTransformer,
+          onStateChange: function(state){ $root.collection.getFacetById($parent.id()).properties.stacked(state.stacked); },
+          onClick: function(d) {
+            $root.query.togglePivotFacet({facet: d.obj, widget_id: id()});
+          },
+          onComplete: function(){ viewModel.getWidgetById($parent.id()).isLoading(false) } }"
+        />
+      <!-- /ko -->
+
+      <!-- ko if: dimension() == 3 -->
+      <div data-bind="timelineChart: {datum: {counts: counts(), extraSeries: extraSeries(), widget_id: $parent.id(), label: label()}, stacked: $root.collection.getFacetById($parent.id()).properties.stacked(), field: field, label: label(), transformer: timelineChartDataTransformer,
+        type: $root.collection.getFacetById($parent.id()).properties.timelineChartType,
+        fqs: $root.query.fqs,
+        onSelectRange: function(from, to){ $root.collection.selectTimelineFacet({from: from, to: to, cat: field, widget_id: $parent.id()}) },
+        onStateChange: function(state){ $root.collection.getFacetById($parent.id()).properties.stacked(state.stacked); },
+        onClick: function(d){ $root.query.selectRangeFacet({count: d.obj.value, widget_id: $parent.id(), from: d.obj.from, to: d.obj.to, cat: d.obj.field}) },
+        onComplete: function(){ $root.getWidgetById($parent.id()).isLoading(false) }}" />
+      <!-- /ko -->
+
+    <!-- /ko -->
   </div>
   <!-- /ko -->
 </script>
@@ -851,7 +1155,7 @@ ${ dashboard.layout_skeleton() }
     <!--[if IE]><img src="${ static('desktop/art/spinner.gif') }" /><![endif]-->
   </div>
 
-  <!-- ko if: $root.getFacetFromQuery(id()) -->
+  <!-- ko if: $root.getFacetFromQuery(id()).has_data() -->
   <div class="row-fluid" data-bind="with: $root.getFacetFromQuery(id())">
     <div data-bind="visible: $root.isEditing, with: $root.collection.getFacetById($parent.id())" style="margin-bottom: 20px">
       <span data-bind="template: { name: 'facet-toggle' }">
@@ -863,11 +1167,11 @@ ${ dashboard.layout_skeleton() }
       <a href="javascript:void(0)" data-bind="click: $root.collection.rangeZoomOut"><i class="fa fa-search-minus"></i> ${ _('reset') }</a>
     </div>
 
-    <div data-bind="lineChart: {datum: {counts: counts, widget_id: $parent.id(), label: label}, field: field, label: label,
+    <div data-bind="lineChart: {datum: {counts: counts(), widget_id: $parent.id(), label: label()}, field: field, label: label(),
       transformer: lineChartDataTransformer,
       onClick: function(d){ viewModel.query.selectRangeFacet({count: d.obj.value, widget_id: d.obj.widget_id, from: d.obj.from, to: d.obj.to, cat: d.obj.field}) },
       onSelectRange: function(from, to){ viewModel.collection.selectTimelineFacet({from: from, to: to, cat: field, widget_id: $parent.id()}) },
-      onComplete: function(){ viewModel.getWidgetById(id).isLoading(false) } }"
+      onComplete: function(){ viewModel.getWidgetById($parent.id()).isLoading(false) } }"
     />
   </div>
   <!-- /ko -->
@@ -875,7 +1179,7 @@ ${ dashboard.layout_skeleton() }
 
 
 <script type="text/html" id="pie-widget">
-  <!-- ko if: $root.getFacetFromQuery(id()) -->
+  <!-- ko if: $root.getFacetFromQuery(id()).has_data() -->
   <div class="row-fluid" data-bind="with: $root.getFacetFromQuery(id())">
     <div data-bind="visible: $root.isEditing, with: $root.collection.getFacetById($parent.id())" style="margin-bottom: 20px">
       <span data-bind="template: { name: 'facet-toggle' }">
@@ -884,25 +1188,26 @@ ${ dashboard.layout_skeleton() }
 
     <div data-bind="with: $root.collection.getFacetById($parent.id())">
       <!-- ko if: type() == 'range' -->
-      <div data-bind="pieChart: {data: {counts: $parent.counts, widget_id: $parent.id}, field: field, fqs: $root.query.fqs,
+      <div data-bind="pieChart: {data: {counts: $parent.counts(), widget_id: $parent.id()}, field: field, fqs: $root.query.fqs,
         transformer: rangePieChartDataTransformer,
         maxWidth: 250,
         onClick: function(d){ viewModel.query.selectRangeFacet({count: d.data.obj.value, widget_id: d.data.obj.widget_id, from: d.data.obj.from, to: d.data.obj.to, cat: d.data.obj.field}) },
-        onComplete: function(){ viewModel.getWidgetById($parent.id).isLoading(false)} }" />
+        onComplete: function(){ viewModel.getWidgetById($parent.id()).isLoading(false)} }" />
       <!-- /ko -->
       <!-- ko if: type() == 'range-up' -->
-      <div data-bind="pieChart: {data: {counts: $parent.counts, widget_id: $parent.id}, field: field, fqs: $root.query.fqs,
-        transformer: rangePieChartDataTransformer,
+      <div data-bind="pieChart: {data: {counts: $parent.counts(), widget_id: $parent.id()}, field: field, fqs: $root.query.fqs,
+        transformer: rangeUpPieChartDataTransformer,
+        rangeUp: true,
         maxWidth: 250,
         onClick: function(d){ viewModel.query.selectRangeUpFacet({count: d.data.obj.value, widget_id: d.data.obj.widget_id, from: d.data.obj.from, to: d.data.obj.to, cat: d.data.obj.field, 'exclude': false, is_up: d.data.obj.is_up}) },
-        onComplete: function(){ viewModel.getWidgetById($parent.id).isLoading(false)} }" />
+        onComplete: function(){ viewModel.getWidgetById($parent.id()).isLoading(false)} }" />
       <!-- /ko -->
       <!-- ko if: type().indexOf('range') == -1 -->
-      <div data-bind="pieChart: {data: {counts: $parent.counts, widget_id: $parent.id}, field: field, fqs: $root.query.fqs,
+      <div data-bind="pieChart: {data: {counts: $parent.counts(), widget_id: $parent.id()}, field: field, fqs: $root.query.fqs,
         transformer: pieChartDataTransformer,
         maxWidth: 250,
-        onClick: function(d){viewModel.query.toggleFacet({facet: d.data.obj, widget_id: d.data.obj.widget_id})},
-        onComplete: function(){viewModel.getWidgetById($parent.id).isLoading(false)}}" />
+        onClick: function(d){ viewModel.query.toggleFacet({facet: d.data.obj, widget_id: d.data.obj.widget_id}) },
+        onComplete: function(){ viewModel.getWidgetById($parent.id()).isLoading(false)} }" />
       <!-- /ko -->
     </div>
   </div>
@@ -915,10 +1220,10 @@ ${ dashboard.layout_skeleton() }
 
 
 <script type="text/html" id="tree-widget">
-  <!-- ko if: $root.getFacetFromQuery(id()) -->
+  <!-- ko if: $root.getFacetFromQuery(id()).has_data() -->
   <div class="row-fluid" data-bind="with: $root.getFacetFromQuery(id())">
     <div class="responsive-facet-toggle-section" data-bind="visible: $root.isEditing, with: $root.collection.getFacetById($parent.id())">
-      <span data-bind="template: { name: 'facet-toggle', afterRender: function(){ $root.getWidgetById($parent.id).isLoading(false); } }">
+      <span data-bind="template: { name: 'facet-toggle', afterRender: function(){ $root.getWidgetById($parent.id()).isLoading(false); } }">
       </span>
     </div>
 
@@ -957,21 +1262,21 @@ ${ dashboard.layout_skeleton() }
           </div>
         </div>
       </div>
+
       <div class="clearfix"></div>
 
       <!-- ko if: properties.scope() == 'tree' -->
-        <div data-bind="partitionChart: {datum: {counts: $parent.count, widget_id: id(), label: $parent.label},
+        <div data-bind="partitionChart: {datum: {counts: $parent.counts(), widget_id: $parent.id(), label: $parent.label()},
           fqs: $root.query.fqs,
-          tooltip: '${ _('Click to zoom, double click to select') }',
+          tooltip: '${ _ko('Click to zoom, double click to select') }',
           transformer: partitionChartDataTransformer,
           onStateChange: function(state){ },
           onClick: function(d) {
             $root.query.togglePivotFacet({facet: d.obj, widget_id: id()});
           },
-          onComplete: function(){ viewModel.getWidgetById(id()).isLoading(false) } }"
+          onComplete: function(){ viewModel.getWidgetById($parent.id()).isLoading(false) } }"
         />
       <!-- /ko -->
-
     </div>
   </div>
   <!-- /ko -->
@@ -984,10 +1289,10 @@ ${ dashboard.layout_skeleton() }
 
 
 <script type="text/html" id="heatmap-widget">
-  <!-- ko if: $root.getFacetFromQuery(id()) -->
+  <!-- ko if: $root.getFacetFromQuery(id()).has_data() -->
   <div class="row-fluid" data-bind="with: $root.getFacetFromQuery(id())">
     <div class="floating-facet-toggle-section" data-bind="visible: $root.isEditing, with: $root.collection.getFacetById($parent.id())">
-      <span data-bind="template: { name: 'facet-toggle', afterRender: function(){ $root.getWidgetById($parent.id).isLoading(false); } }">
+      <span data-bind="template: { name: 'facet-toggle', afterRender: function(){ $root.getWidgetById($parent.id()).isLoading(false); } }">
       </span>
     </div>
 
@@ -1024,20 +1329,20 @@ ${ dashboard.layout_skeleton() }
             </div>
           </div>
         </div>
-
       </div>
+
       <div class="clearfix"></div>
 
       <!-- ko if: properties.scope() == 'stack' -->
-        <div data-bind="barChart: {datum: {counts: $parent.count, widget_id: id(), label: $parent.label}, stacked: true,
+        <div data-bind="barChart: {datum: {counts: $parent.counts(), widget_id: $parent.id(), label: $parent.label()}, stacked: $root.collection.getFacetById($parent.id()).properties.stacked(),
           isPivot: true,
           fqs: $root.query.fqs,
           transformer: pivotChartDataTransformer,
-          onStateChange: function(state){ },
+          onStateChange: function(state){ $root.collection.getFacetById($parent.id()).properties.stacked(state.stacked); },
           onClick: function(d) {
             $root.query.togglePivotFacet({facet: d.obj, widget_id: id()});
           },
-          onComplete: function(){ viewModel.getWidgetById(id()).isLoading(false) } }"
+          onComplete: function(){ viewModel.getWidgetById($parent.id()).isLoading(false) } }"
         />
       <!-- /ko -->
     </div>
@@ -1051,8 +1356,31 @@ ${ dashboard.layout_skeleton() }
 </script>
 
 
+<script type="text/html" id="hit-widget">
+  <div class="widget-spinner" data-bind="visible: ! $root.hasRetrievedResults()">
+    <!--[if !IE]> --><i class="fa fa-spinner fa-spin"></i><!-- <![endif]-->
+    <!--[if IE]><img src="${ static('desktop/art/spinner.gif') }" /><![endif]-->
+  </div>
+
+  <!-- ko if: $root.getFacetFromQuery(id()).has_data() -->
+  <div class="row-fluid" data-bind="with: $root.getFacetFromQuery(id())">
+    <div data-bind="with: $root.collection.getFacetById($parent.id())">
+      <div data-bind="visible: $root.isEditing" style="margin-bottom: 20px">
+        <span class="facet-field-label">${ _('Metric') }</span>
+        <select data-bind="options: HIT_OPTIONS, optionsText: 'label', optionsValue: 'value', value: properties.aggregate"></select>
+      </div>
+      <div data-bind="visible: ! $root.isEditing(), text: getHitOption(properties.aggregate())" class="muted"></div>
+    </div>
+    <span class="big-counter" data-bind="textSqueezer: counts"></span>
+  </div>
+  <!-- /ko -->
+</script>
+
+
 <script type="text/html" id="filter-widget">
-  <div data-bind="visible: $root.query.fqs().length == 0" style="margin-top: 10px">${_('There are currently no filters applied.')}</div>
+  <div data-bind="visible: $root.query.fqs().length == 0" style="margin-top: 10px; min-height: 87px">
+    ${ _('There are currently no filters applied.') }
+  </div>
   <div data-bind="foreach: { data: $root.query.fqs, afterRender: function(){ isLoading(false); } }">
     <!-- ko if: $data.type() == 'field' -->
     <div class="filter-box">
@@ -1060,18 +1388,18 @@ ${ dashboard.layout_skeleton() }
         <a href="javascript:void(0)" class="pull-right" data-bind="click: function() { chartsUpdatingState(); $root.query.removeFilter($data); $root.search(); }">
           <i class="fa fa-times"></i>
         </a>
-        <span data-bind="text: $data.field()"></span>
+        <span data-bind="text: $data.field"></span>
         &nbsp;
       </div>
       <div class="content">
         <strong>${_('selected')}</strong>
         <span data-bind="foreach: $data.filter">
-          <span class="label label-info" style="margin-left: 4px" data-bind="visible: ! $data.exclude(), text: $data.value()"></span>
+          <span class="label label-info" style="margin-left: 4px" data-bind="visible: ! $data.exclude(), html: prettifyDate($data.value()), attr: {'title': $data.value()}"></span>
         </span>
         <br/>
         <strong>${_('excluded')}</strong>
         <span data-bind="foreach: $data.filter">
-          <span class="label label-important" style="margin-left: 4px" data-bind="visible: $data.exclude(), text: $data.value()"></span>
+          <span class="label label-important" style="margin-left: 4px" data-bind="visible: $data.exclude(), html: prettifyDate($data.value()), attr: {'title': $data.value()}"></span>
         </span>
       </div>
     </div>
@@ -1092,13 +1420,12 @@ ${ dashboard.layout_skeleton() }
           <!-- ko if: $.grep($parent.filter(), function(f) { return f.value() == $data.from() && ! f.exclude() }).length > 0 -->
           <span class="label label-info">
             <!-- ko if: $parent.type() == 'range' -->
-              <strong>${_('from')}</strong> <span data-bind="text: $data.from"></span>
-              <strong>${_('to')}</strong> <span data-bind="text: $data.to"></span>
+              <span data-bind="html: prettifyDateRange($data.from(), $data.to(), null, true), attr: {'title': $data.from() + ' -> ' + $data.to()}"></span>
             <!-- /ko -->
 
             <!-- ko if: $parent.type() == 'range-up' -->
               <strong data-bind="visible: ! $parent.is_up()">${ _('Until') }</strong>
-              <span data-bind="text: $data.from"></span>
+              <span data-bind="html: prettifyDate($data.from()), attr: {'title': $data.from()}"></span>
               <strong data-bind="visible: $parent.is_up()"> & Up</strong>
             <!-- /ko -->
           </span>
@@ -1109,14 +1436,40 @@ ${ dashboard.layout_skeleton() }
         <span data-bind="foreach: $data.properties" style="font-weight: normal" class="excluded">
           <!-- ko if: $.grep($parent.filter(), function(f) { return f.value() == $data.from() && f.exclude() }).length > 0 -->
           <span class="label label-important">
-            <strong>${_('from')}</strong> <span data-bind="text: $data.from"></span>
-            <strong>${_('to')}</strong> <span data-bind="text: $data.to"></span>
+            <span data-bind="html: prettifyDateRange($data.from(), $data.to(), null, true), attr: {'title': $data.from() + ' -> ' + $data.to()}"></span>
           </span>
           <!-- /ko -->
         </span>
       </div>
     </div>
     <!-- /ko -->
+
+    <!-- ko if: $data.type() == 'map' -->
+    <div class="filter-box">
+      <div class="title">
+        <a href="javascript:void(0)" class="pull-right" data-bind="click: function(){ chartsUpdatingState(); $root.query.removeFilter($data); $root.search() }">
+          <i class="fa fa-times"></i>
+        </a>
+        <span data-bind="text: $data.lat"></span>, <span data-bind="text: $data.lon"></span>
+        &nbsp;
+      </div>
+      <div class="content">
+        <strong>${_('selected')}</strong>
+        <span class="label label-info">
+          [
+          <span class="label label-info" style="margin-left: 4px" data-bind="text: $data.properties.lat_sw, attr: {'title': '${ _ko('Latitude South West') }'"></span>
+          <span class="label label-info" style="margin-left: 4px" data-bind="text: $data.properties.lon_sw, attr: {'title': '${ _ko('Longitude South West') }'"></span>
+          ]
+          ${ _("TO") }
+          [
+          <span class="label label-info" style="margin-left: 4px" data-bind="text: $data.properties.lat_ne, attr: {'title': '${ _ko('Latitude North East') }'"></span>
+          <span class="label label-info" style="margin-left: 4px" data-bind="text: $data.properties.lon_ne, attr: {'title': '${ _ko('Longitude North East') }'"></span>
+          ]
+        </span>
+      </div>
+    </div>
+    <!-- /ko -->
+
   </div>
   <div class="clearfix"></div>
   <div class="widget-spinner" data-bind="visible: isLoading() &&  $root.query.fqs().length > 0">
@@ -1127,11 +1480,11 @@ ${ dashboard.layout_skeleton() }
 
 
 <script type="text/html" id="map-widget">
-  <!-- ko if: $root.getFacetFromQuery(id()) -->
+  <!-- ko if: $root.getFacetFromQuery(id()).has_data() -->
   <div class="row-fluid" data-bind="with: $root.getFacetFromQuery(id())">
     <div data-bind="visible: $root.isEditing, with: $root.collection.getFacetById($parent.id())" style="margin-bottom: 20px">
       <div class="floating-facet-toggle-section">
-        <span data-bind="template: { name: 'facet-toggle', afterRender: function(){ $root.getWidgetById($parent.id).isLoading(false); } }">
+        <span data-bind="template: { name: 'facet-toggle', afterRender: function(){ $root.getWidgetById($parent.id()).isLoading(false); } }">
         </span>
       </div>
       <div class="dimensions-header margin-bottom-10" data-bind="visible: $root.isEditing() && $data.properties.facets().length > 0">
@@ -1182,14 +1535,14 @@ ${ dashboard.layout_skeleton() }
     </div>
 
     <div data-bind="with: $root.collection.getFacetById($parent.id())">
-      <div data-bind="mapChart: {data: {counts: $parent.count, scope: $root.collection.getFacetById($parent.id).properties.scope()},
+      <div data-bind="mapChart: {data: {counts: $parent.counts(), scope: $root.collection.getFacetById($parent.id()).properties.scope()},
         transformer: mapChartDataTransformer,
         maxWidth: 750,
         isScale: true,
         onClick: function(d) {
           $root.query.togglePivotFacet({facet: {'fq_fields': d.fields, 'fq_values': d.value}, widget_id: id()});
         },
-        onComplete: function(){ var widget = viewModel.getWidgetById($parent.id); if (widget != null) {widget.isLoading(false)};} }" />
+        onComplete: function(){ var widget = viewModel.getWidgetById($parent.id()); if (widget != null) { widget.isLoading(false)}; } }" />
     </div>
   </div>
   <!-- /ko -->
@@ -1203,25 +1556,26 @@ ${ dashboard.layout_skeleton() }
 <script type="text/html" id="leafletmap-widget">
   <div class="row-fluid">
     <div data-bind="visible: $root.isEditing" style="margin-top: 10px; margin-bottom: 20px;" class="leaflet-align">
-      ${_('Latitude')}<div class="break-on-small-column"></div>
-      <select data-bind="options: $root.collection.template.fieldsNames, value: $root.collection.template.leafletmap.latitudeField, optionsCaption: '${ _('Choose...') }'"></select>
+      <span class="facet-field-label">${_('Latitude')}</span><div class="break-on-small-column"></div>
+      <select data-bind="options: $root.collection.template.sortedGeogFieldsNames, value: $root.collection.template.leafletmap.latitudeField, optionsCaption: '${ _ko('Choose...') }'"></select>
       &nbsp;&nbsp;
       <div class="break-on-small-column"></div>
-      ${_('Longitude')}<div class="break-on-small-column"></div>
-      <select data-bind="options: $root.collection.template.fieldsNames, value: $root.collection.template.leafletmap.longitudeField, optionsCaption: '${ _('Choose...') }'"></select>
+      <span class="facet-field-label">${_('Longitude')}</span><div class="break-on-small-column"></div>
+      <select data-bind="options: $root.collection.template.sortedGeogFieldsNames, value: $root.collection.template.leafletmap.longitudeField, optionsCaption: '${ _ko('Choose...') }'"></select>
       &nbsp;&nbsp;
       <div class="break-on-small-column"></div>
-      ${_('Label')}<div class="break-on-small-column"></div>
-      <select data-bind="options: $root.collection.template.fieldsNames, value: $root.collection.template.leafletmap.labelField, optionsCaption: '${ _('Choose...') }'"></select>
+      <span class="facet-field-label">${_('Label')}</span><div class="break-on-small-column"></div>
+      <select data-bind="options: $root.collection.template.fieldsNames, value: $root.collection.template.leafletmap.labelField, optionsCaption: '${ _ko('Choose...') }'"></select>
     </div>
 
-    <div data-bind="leafletMapChart: {visible: ! $root.isRetrievingResults() && $root.collection.template.leafletmapOn(), datum: {counts: $root.response()},
+    <div data-bind="leafletMapChart: {showMoveCheckbox: true, moveCheckboxLabel: '${ _ko('Search as I move the map') }', visible: $root.hasRetrievedResults() && $root.collection.template.leafletmapOn(), isLoading: isLoading(), datum: {counts: $root.response()},
       transformer: leafletMapChartDataTransformer,
-      onComplete: function(){ var widget = viewModel.getWidgetById(id); if (widget != null) {widget.isLoading(false)};} }">
+      onRegionChange: function(bounds){ $root.query.selectMapRegionFacet({widget_id: id(), 'bounds': ko.toJS(bounds, null, 2), lat: $root.collection.template.leafletmap.latitudeField(), lon: $root.collection.template.leafletmap.longitudeField()}); },
+      onComplete: function(){ var widget = viewModel.getWidgetById(id()); if (widget != null) { widget.isLoading(false)}; } }">
     </div>
   </div>
 
-  <div class="widget-spinner" data-bind="visible: $root.isRetrievingResults()">
+  <div class="widget-spinner" data-bind="visible: isLoading()">
     <!--[if !IE]> --><i class="fa fa-spinner fa-spin"></i><!-- <![endif]-->
     <!--[if IE]><img src="${ static('desktop/art/spinner.gif') }" /><![endif]-->
   </div>
@@ -1319,22 +1673,7 @@ ${ dashboard.layout_skeleton() }
   </table>
 </script>
 
-<div id="shareModal" class="modal hide" data-backdrop="true">
-  <div class="modal-header">
-    <a href="javascript: void(0)" data-dismiss="modal" class="pull-right"><i class="fa fa-times"></i></a>
-    <h3>${_('Share this dashboard')}</h3>
-  </div>
-  <div class="modal-body">
-    <p>${_('The following URL will show the current dashboard and the applied filters.')}</p>
-    <input type="text" style="width: 540px" />
-  </div>
-  <div class="modal-footer">
-    <a href="#" class="btn" data-dismiss="modal">${_('Close')}</a>
-  </div>
-</div>
-
-
-<div id="addFacetDemiModal" class="demi-modal hide" data-backdrop="false">
+<div id="addFacetDemiModal" class="demi-modal fade" data-backdrop="false">
   <div class="modal-body">
     <a href="javascript: void(0)" data-dismiss="modal" data-bind="click: addFacetDemiModalFieldCancel" class="pull-right"><i class="fa fa-times"></i></a>
     <div style="float: left; margin-right: 10px;text-align: center">
@@ -1353,22 +1692,184 @@ ${ dashboard.layout_skeleton() }
       </div>
     </div>
   </div>
+  <div><a class="pointer demi-modal-chevron" data-dismiss="modal" data-bind="click: addFacetDemiModalFieldCancel"><i class="fa fa-chevron-up"></i></a></div>
 </div>
 
-<div id="settingsDemiModal" class="demi-modal hide" data-backdrop="false">
+<div id="settingsDemiModal" class="demi-modal fade" data-backdrop="false">
+  <a href="javascript: void(0)" data-dismiss="modal" class="pull-right" style="margin: 10px"><i class="fa fa-times"></i></a>
   <div class="modal-body">
-    <a href="javascript: void(0)" data-dismiss="modal" class="pull-right"><i class="fa fa-times"></i></a>
-    <div style="float: left; margin-right: 30px; text-align: center; line-height: 28px">
-      <!-- ko if: $root.initial.inited() -->
-      ${ _('Solr index') }
-      <select data-bind="options: $root.initial.collections, value: $root.collection.name" style="margin-bottom: 0">
-      </select>
-      <!-- /ko -->
+    <div class="row-fluid">
+      <div class="span12">
+        <form class="form-horizontal">
+          <fieldset>
+            <legend><i class="fa fa-cogs"></i> ${ _('General settings') }</legend>
+            <!-- ko if: $root.initial.inited() -->
+            <div class="control-group">
+              <label class="control-label" for="settingssolrindex">${ _('Solr index') }</label>
+              <div class="controls">
+                <select id="settingssolrindex" data-bind="options: $root.initial.collections, value: $root.collection.name"></select>
+              </div>
+            </div>
+            <!-- /ko -->
+            <div class="control-group">
+              <label class="control-label" for="settingsdescription">${ _('Description') }</label>
+              <div class="controls">
+                <input id="settingsdescription" type="text" class="input-xlarge" data-bind="value: $root.collection.description" style="margin-bottom: 0" />
+              </div>
+            </div>
+          </fieldset>
+        </form>
+      </div>
     </div>
-    <label class="checkbox" style="margin-top: 4px">
-      ${ _('Visible to everybody') } <input type="checkbox" data-bind="checked: $root.collection.enabled"/>
-    </label>
+
   </div>
+  <div><a class="pointer demi-modal-chevron" data-dismiss="modal"><i class="fa fa-chevron-up"></i></a></div>
+</div>
+
+<div id="qdefinitionsDemiModal" class="demi-modal fade" data-backdrop="false">
+  <a href="javascript: void(0)" data-dismiss="modal" class="pull-right" style="margin: 10px"><i class="fa fa-times"></i></a>
+  <div class="modal-body">
+    <div class="row-fluid">
+      <div class="span12">
+        <form class="form-inline">
+          <fieldset>
+            <legend><i class="fa fa-bookmark-o"></i> ${ _('Query definitions') }
+              <div class="input-append" style="margin-left: 30px; margin-top: 4px">
+                <input id="newqname" type="text" class="input-xxlarge" data-bind="value: $root.collection.newQDefinitionName, valueUpdate:'afterkeydown'" style="margin-bottom: 0" placeholder="${ _('Add current query as...') }" />
+                <a title="${ _('Click on this button to add the currenty query as a new definition') }" class="btn plus-btn" data-bind="click: $root.collection.addQDefinition, css:{'disabled': $.trim($root.collection.newQDefinitionName()) == ''}" style="margin-top: 1px">
+                  <i class="fa fa-plus"></i>
+                </a>
+              </div>
+            </legend>
+            <div class="control-group" data-bind="visible: $root.collection.qdefinitions().length > 0" style="margin-top: 0">
+              <div class="controls">
+                <ul class="unstyled airy qdefinitions" data-bind="foreach: $root.collection.qdefinitions">
+                  <li>
+                    <span class="badge badge-info badge-left pointer">
+                      <span data-bind="text: name, attr:{'title': ko.mapping.toJSON(data, null, 2)}, click: $root.collection.loadQDefinition"></span>
+                    </span><span class="badge badge-right trash-share" data-bind="click: $root.collection.removeQDefinition"> <i class="fa fa-times"></i></span></li>
+                  </li>
+                </ul>
+              </div>
+            </div>
+            <div class="control-group" data-bind="visible: $root.collection.qdefinitions().length == 0">
+              <div class="controls">
+                <h4>${ _('There are currently no query definitions.') }</h4>
+              </div>
+            </div>
+          </fieldset>
+
+        </form>
+      </div>
+    </div>
+
+  </div>
+  <div><a class="pointer demi-modal-chevron" data-dismiss="modal"><i class="fa fa-chevron-up"></i></a></div>
+</div>
+
+
+<script type="text/html" id="time-filter">
+  <span data-bind="visible: $root.availableDateFields().length > 0" >
+    <span data-bind="template: {name: 'time-filter-select'}"></span>
+    <a class="btn pointer" title="${ _('Time Settings') }" rel="tooltip" data-placement="bottom" data-toggle="modal" data-target="#timeSettingsDemiModal">
+      <i class="fa fa-calendar"></i>
+    </a>
+  </span>
+</script>
+
+
+<script type="text/html" id="time-fixed-filter">
+  <span data-bind="visible: $root.availableDateFields().length > 0" class="muted" title="${ _('Time Settings') }" rel="tooltip" data-placement="bottom" data-toggle="modal" data-target="#timeSettingsDemiModal" style="cursor:pointer">
+    &nbsp;
+    <span data-bind="text: moment($root.collection.timeFilter.from()).utc().format('YYYY-MM-DD HH:mm:SS')"></span>
+    <i class="fa fa-long-arrow-right"></i>
+    <span data-bind="text: moment($root.collection.timeFilter.to()).utc().format('YYYY-MM-DD HH:mm:SS')"></span>
+  </span>
+</script>
+
+
+<script type="text/html" id="time-filter-select">
+  <select id="settingstimeinterval" data-bind="value: collection.timeFilter.value" class="input-medium" style="margin-right: 4px">
+    <option value="all">${ _('All') }</option>
+    <option value="5MINUTES">${ _('Past 5 Minutes') }</option>
+    <option value="30MINUTES">${ _('Past 30 Minutes') }</option>
+    <option value="1HOURS">${ _('Past 1 Hour') }</option>
+    <option value="12HOURS">${ _('Past 12 Hours') }</option>
+    <option value="1DAYS">${ _('Past day') }</option>
+    <option value="2DAYS">${ _('Past 2 days') }</option>
+    <option value="7DAYS">${ _('Past 7 days') }</option>
+    <option value="1MONTHS">${ _('Past 1 Month') }</option>
+    <option value="3MONTHS">${ _('Past 3 Months') }</option>
+    <option value="1YEARS">${ _('Past Year') }</option>
+    <option value="2YEARS">${ _('Past 2 Years') }</option>
+    <option value="10YEARS">${ _('Past 10 Years') }</option>
+  </select>
+</script>
+
+
+<div id="timeSettingsDemiModal" class="demi-modal fade" data-backdrop="false">
+  <a href="javascript: void(0)" data-dismiss="modal" class="pull-right" style="margin: 10px"><i class="fa fa-times"></i></a>
+  <div class="modal-body">
+    <div class="row-fluid">
+      <div class="span12">
+        <form class="form-horizontal">
+          <fieldset>
+            <legend><i class="fa fa-calendar"></i> ${ _('Time settings') }</legend>
+
+            <span data-bind="visible: $root.availableDateFields().length > 0">
+              <div class="control-group">
+                <label class="control-label" for="settingstimefield">${ _('Date/time field') }</label>
+                <div class="controls">
+                  <select id="settingstimefield" data-bind="options: $root.availableDateFields, value: collection.timeFilter.field, optionsValue: 'name'" class="input-medium"></select>
+                </div>
+              </div>
+              <div class="control-group">
+                <label class="control-label" for="settingstimetype">${ _('Type') }</label>
+                <div class="controls">
+                  <label class="radio inline"><input type="radio" name="settingstimetype" value="rolling" data-bind="checked: collection.timeFilter.type" /> ${ _('Rolling') }</label>
+                  <label class="radio inline"><input type="radio" name="settingstimetype" value="fixed" data-bind="checked: collection.timeFilter.type" /> ${ _('Fixed') }</label>
+                </div>
+              </div>
+              <div class="control-group" data-bind="visible: collection.timeFilter.type() == 'rolling'">
+                <label class="control-label" for="settingstimeinterval">${ _('Interval') }</label>
+                <div class="controls">
+                  <span data-bind="template: {name: 'time-filter-select'}"></span>
+                </div>
+              </div>
+              <div class="control-group" data-bind="visible: collection.timeFilter.type() == 'fixed'">
+                <label class="control-label" for="settingstimestart">${ _('Start date/time') }</label>
+                <div class="controls">
+                  <input id="settingstimestart" type="text" data-bind="value: collection.timeFilter.from, datepicker: {momentFormat: 'YYYY-MM-DD[T]HH:mm:SS[Z]'}" />
+                </div>
+              </div>
+              <div class="control-group" data-bind="visible: collection.timeFilter.type() == 'fixed'">
+                <label class="control-label" for="settingstimeend">${ _('End date/time') }</label>
+                <div class="controls">
+                  <input id="settingstimeend" type="text" data-bind="value: collection.timeFilter.to, datepicker: {momentFormat: 'YYYY-MM-DD[T]HH:mm:SS[Z]'}" />
+                </div>
+              </div>
+              <div class="control-group">
+                <div class="controls">
+                  <label class="checkbox">
+                    <input type="checkbox" style="margin-right: 4px; margin-top: 9px" data-bind="checked: $root.collection.autorefresh"/> ${ _('Auto-refresh every') } <input type="number" class="input-mini" style="margin-bottom: 0; margin-left: 6px; margin-right: 6px; width: 46px; text-align:center" data-bind="value: $root.collection.autorefreshSeconds"/> ${ _('seconds') }
+                  </label>
+                </div>
+              </div>
+            </span>
+
+            <!-- ko if: $root.availableDateFields().length == 0 -->
+              <label class="checkbox">
+                <input type="checkbox" style="margin-right: 4px; margin-top: 9px" data-bind="checked: $root.collection.autorefresh"/> ${ _('Auto-refresh every') } <input type="number" class="input-mini" style="margin-bottom: 0; margin-left: 6px; margin-right: 6px; width: 46px; text-align:center" data-bind="value: $root.collection.autorefreshSeconds"/> ${ _('seconds') }
+              </label>
+            <!-- /ko -->
+          </fieldset>
+        </form>
+
+      </div>
+    </div>
+
+  </div>
+  <div><a class="pointer demi-modal-chevron" data-dismiss="modal"><i class="fa fa-chevron-up"></i></a></div>
 </div>
 
 <div id="fieldAnalysis" class="popover mega-popover right">
@@ -1391,17 +1892,20 @@ ${ dashboard.layout_skeleton() }
 <link rel="stylesheet" href="${ static('desktop/ext/css/hue-charts.css') }">
 <link rel="stylesheet" href="${ static('desktop/ext/chosen/chosen.min.css') }">
 
+<script src="${ static('desktop/js/hue.json.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/moment-with-locales.min.js') }" type="text/javascript" charset="utf-8"></script>
 
-${ dashboard.import_layout() }
+${ dashboard.import_layout(True) }
 
 <script src="${ static('search/js/search.utils.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('search/js/lzstring.min.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/js/jquery.textsqueezer.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/bootstrap-editable.min.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/js/ko.editable.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/shortcut.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/mustache.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/chosen/chosen.jquery.min.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/ext/js/jquery/plugins/jquery.hotkeys.js') }"></script>
 
 <script src="${ static('search/js/search.ko.js') }" type="text/javascript" charset="utf-8"></script>
 
@@ -1419,13 +1923,133 @@ ${ dashboard.import_charts() }
   #emptyDashboardEditing {
     top: 190px!important;
   }
+  .dashboard {
+    margin-top: 20px;
+  }
+  .dashboard.with-top-margin {
+    margin-top: 80px;
+  }
 % endif
 </style>
 
 <script type="text/javascript" charset="utf-8">
+
 var viewModel;
 
 nv.dev = false;
+moment.suppressDeprecationWarnings = true;
+
+var HIT_OPTIONS = [
+  { value: "count", label: "${ _('Count') }" },
+  { value: "unique", label: "${ _('Unique Count') }" },
+  { value: "avg", label: "${ _('Average') }" },
+  { value: "sum", label: "${ _('Sum') }" },
+  { value: "min", label: "${ _('Min') }" },
+  { value: "max", label: "${ _('Max') }" },
+  { value: "sumsq", label: "${ _('Sum of square') }" },
+  { value: "median", label: "${ _('Median') }" }
+];
+
+function getHitOption(value){
+  for (var i=0; i < HIT_OPTIONS.length; i++){
+    if (HIT_OPTIONS[i].value == value){
+      return HIT_OPTIONS[i].label;
+    }
+  }
+  return '';
+}
+
+function prettifyDate(from, widget, to) {
+  if (typeof from == "undefined" || $.isNumeric(from)) {
+    return from;
+  }
+  if (typeof to != "undefined" && !$.isNumeric(to)) {
+    return prettifyDateRange(from, to, widget);
+  }
+  var _mFrom = moment(from);
+  if (_mFrom.isValid()) {
+    var _format = "YYYY-MM-DD HH:mm:ss";
+    var _minMaxDiff = 0;
+    if (widget && widget.properties && widget.properties.min && widget.properties.min()) {
+      _minMaxDiff = moment(widget.properties.max()).diff(moment(widget.properties.min()), 'seconds');
+      if (moment(widget.properties.max()).seconds() == 0 && moment(widget.properties.min()).seconds() == 0) {
+        _format = _format.substring(0, 16); // gets rid of :00 seconds
+      }
+    }
+    _format = getFormat(_format, _minMaxDiff, widget);
+
+    return _mFrom.utc().format(_format);
+  }
+  else {
+    return from;
+  }
+}
+
+function prettifyDateRange(from, to, widget, withCommon) {
+  if (typeof from == "undefined" || $.isNumeric(from)) {
+    return from + " - " + to;
+  }
+  var _mFrom = moment(from);
+  var _mTo = moment(to);
+  if (_mFrom.isValid() && _mTo.isValid()) {
+    var _mFromFormatted = _mFrom.utc().format("YYYY-MM-DD HH:mm:ss");
+    var _mToFormatted = _mTo.utc().format("YYYY-MM-DD HH:mm:ss");
+    var _lastEqual = _mFromFormatted.length - 1;
+    for (var i = _mFromFormatted.length - 1; i >= 0; i--) {
+      if (_mFromFormatted[i] == _mToFormatted[i] && (_mFromFormatted[i] == "0" || _mFromFormatted[i] == ":")) {
+        _lastEqual = i;
+      }
+      else break;
+    }
+
+    var _minMaxDiff = moment(to).diff(moment(from), 'seconds');
+    var _format = "YYYY-MM-DD HH:mm:ss".substr(0, _lastEqual);
+    if (_format.length == 13){
+      _format += ":mm"; // hours without minutes are weird
+    }
+    var _formatWithCommon = _format.substring(10, _format.length);
+    var _common = "YYYY-MM-DD";
+    if (widget && widget.properties && widget.properties.min && widget.properties.min()) {
+      _minMaxDiff = moment(widget.properties.max()).diff(moment(widget.properties.min()), 'seconds');
+    }
+    if (withCommon && _mTo.diff(_mFrom, 'days') >= 365){
+      withCommon = false;
+      _format = _common;
+    }
+    else {
+      _format = getFormat(_format, _minMaxDiff, widget);
+    }
+
+    return ((_common != "" && withCommon) ? _mFrom.utc().format(_common) + "&nbsp;" : "") + _mFrom.utc().format(withCommon ? _formatWithCommon : _format) + " <i class='fa fa-long-arrow-right'></i> " + ((_common != "" && withCommon) ? _mTo.utc().format(_common) + "&nbsp;" : "") + _mTo.utc().format(withCommon ? _formatWithCommon : _format);
+  }
+  else {
+    return from + " - " + to;
+  }
+}
+
+function getFormat(format, minMaxDiff, widget) {
+  var _hasWidget = widget && widget.properties && widget.properties.min && widget.properties.min();
+  if (minMaxDiff > 0 && minMaxDiff <= 86400) { // max 1 day
+    if (_hasWidget && moment(widget.properties.max()).date() != moment(widget.properties.min()).date()) {
+      format = format.substring(5, format.length);
+    }
+    else {
+      format = format.substring(10, format.length);
+    }
+  }
+  if (minMaxDiff > 86400 && minMaxDiff <= 22464000) { // max 360 days
+    format = format.substring(5, format.length);
+  }
+  if (minMaxDiff > 22464000){
+    format = format.substr(0, 10);
+  }
+
+  if (format.indexOf("MM") == 0) {
+    format = "MMM " + format.substr(3);
+  }
+  return format;
+}
+
 
 var lastWindowScrollPosition = 0;
 
@@ -1442,12 +2066,13 @@ function pieChartDataTransformer(data) {
   return _data;
 }
 
-function rangePieChartDataTransformer(data) {
+function _rangePieChartDataTransformer(data, isUp) {
   var _data = [];
   $(data.counts).each(function (cnt, item) {
     item.widget_id = data.widget_id;
+    var _label = isUp ? (item.from + (item.is_up ? ' & ${ _('Up') }' : ' & ${ _('Less') }')) : (item.from + ' - ' + item.to);
     _data.push({
-      label: item.from + ' - ' + item.to,
+      label: _label,
       from: item.from,
       to: item.to,
       value: item.value,
@@ -1457,20 +2082,39 @@ function rangePieChartDataTransformer(data) {
   return _data;
 }
 
-function barChartDataTransformer(rawDatum) {
+
+function rangePieChartDataTransformer(data) {
+  return _rangePieChartDataTransformer(data, false);
+}
+
+function rangeUpPieChartDataTransformer(data) {
+  return _rangePieChartDataTransformer(data, true);
+}
+
+function _barChartDataTransformer(rawDatum, isUp) {
   var _datum = [];
   var _data = [];
 
   $(rawDatum.counts).each(function (cnt, item) {
     item.widget_id = rawDatum.widget_id;
     if (typeof item.from != "undefined") {
-      _data.push({
-        series: 0,
-        x: item.from,
-        x_end: item.to,
-        y: item.value,
-        obj: item
-      });
+      if (isUp){
+        _data.push({
+          series: 0,
+          x: item.from + (item.is_up ? ' & ${ _('Up') }' : ' & ${ _('Less') }'),
+          y: item.value,
+          obj: item
+        });
+      }
+      else {
+        _data.push({
+          series: 0,
+          x: item.from,
+          x_end: item.to,
+          y: item.value,
+          obj: item
+        });
+      }
     }
     else {
       _data.push({
@@ -1485,7 +2129,16 @@ function barChartDataTransformer(rawDatum) {
     key: rawDatum.label,
     values: _data
   });
+
   return _datum;
+}
+
+function barChartDataTransformer(rawDatum) {
+  return _barChartDataTransformer(rawDatum, false);
+}
+
+function barChartRangeUpDataTransformer(rawDatum) {
+  return _barChartDataTransformer(rawDatum, true);
 }
 
 
@@ -1542,16 +2195,18 @@ function pivotChartDataTransformer(rawDatum) {
   $(rawDatum.counts).each(function (cnt, item) {
     item.widget_id = rawDatum.widget_id;
 
+    var _key = Array.isArray(item.value) ? item.value[1] : item.value;
     var _category = null;
+
     _categories.forEach(function (category) {
-      if (category.key == item.value) {
+      if (category.key == _key) {
         _category = category;
       }
     });
 
     if (_category == null) {
       _category = {
-        key: item.value,
+        key: _key,
         values: []
       };
       _categories.push(_category);
@@ -1647,11 +2302,24 @@ function mapChartDataTransformer(data) {
     item.values = item.pivot ? item.pivot[0].fq_values : item.fq_values;
     item.counts = item.pivot ? item.pivot[0].count : item.count; // unused yet
     item.is2d = item.pivot ? true : false; // unused yet
-    _data.push({
-      label: item.value,
-      value: item.pivot ? item.pivot[0].fq_values : item.count,
-      obj: item
-    });
+    if (item.value != null && item.value != "" && item.value.length < 4) {
+      var _label = data.scope == "world" ? HueGeo.getISOAlpha3(item.value) : item.value.toUpperCase();
+      var _found = false;
+      for (var i = 0; i < _data.length; i++) { // we group lower and upper cases together
+        if (_data[i].label == _label) {
+          _data[i].value += item.pivot ? item.pivot[0].fq_values : item.count;
+          _found = true;
+          break;
+        }
+      }
+      if (!_found) {
+        _data.push({
+          label: _label,
+          value: item.pivot ? item.pivot[0].fq_values : item.count,
+          obj: item
+        });
+      }
+    }
   });
   return _data;
 }
@@ -1755,14 +2423,27 @@ $(document).ready(function () {
     }
   }
 
-  viewModel = new SearchViewModel(${ collection.get_c(user) | n,unicode }, _query, ${ initial | n,unicode });
+  viewModel = new SearchViewModel(${ collection.get_json(user) | n,unicode }, _query, ${ initial | n,unicode });
+
+  viewModel.timelineChartTypes = ko.observableArray([
+    {
+      value: "line",
+      label: "${ _('Lines')}"
+    },
+    {
+      value: "bar",
+      label: "${ _('Bars')}"
+    }
+  ]);
+
   ko.applyBindings(viewModel);
 
   viewModel.init(function(data){
     $(".chosen-select").trigger("chosen:updated");
   });
+
   viewModel.isRetrievingResults.subscribe(function(value){
-    if (!value){
+    if (! value){
       resizeFieldsList();
     }
   });
@@ -1777,6 +2458,41 @@ $(document).ready(function () {
     }
   });
 
+  viewModel.isPlayerMode.subscribe(function(value) {
+    if (value){
+      $(".navigator").hide();
+      $("body").css("paddingTop", "40px");
+    }
+    else {
+      $(".navigator").show();
+      $("body").css("paddingTop", "80px");
+    }
+  });
+
+  var _refreshTimeout = null;
+
+  viewModel.collection.autorefresh.subscribe(function (value) {
+    if (value) {
+      refresh();
+    }
+    else {
+      window.clearTimeout(_refreshTimeout);
+    }
+  });
+
+  if (viewModel.collection.autorefresh()) {
+    refresh();
+  }
+
+  function refresh() {
+    _refreshTimeout = window.setTimeout(function () {
+      if (viewModel.collection.autorefresh()) {
+        viewModel.search(refresh);
+      }
+    }, ($.isNumeric(viewModel.collection.autorefreshSeconds()) ? viewModel.collection.autorefreshSeconds() * 1 : 60) * 1000)
+  }
+
+
   $("#addFacetDemiModal").on("hidden", function () {
     if (typeof selectedWidget.hasBeenSelected == "undefined"){
       addFacetDemiModalFieldCancel();
@@ -1784,40 +2500,44 @@ $(document).ready(function () {
   });
 
   $(document).on("shownAnalysis", function(){
-    var _fieldElement = $(".field-selector").filter(function(){ return $(this).text().toLowerCase() === viewModel.fieldAnalysesName();}).parent();
+    var _fieldElement = $(".field-selector").filter(function(){ return $(this).text().toLowerCase() === viewModel.fieldAnalysesName().toLowerCase();}).parent();
     $("#fieldAnalysis").show().css("top", _fieldElement.position().top - $("#fieldAnalysis").outerHeight()/2 + _fieldElement.outerHeight()/2).css("left", _fieldElement.position().left + _fieldElement.outerWidth());
   });
-});
 
-  function showShareModal() {
-    if (window.location.search.indexOf("collection") == -1 && window.location.hash.indexOf("collection") == -1) {
-      $(document).trigger("error", "${_('The current collection must be saved to be shared.')}");
+  % if is_owner:
+  $(window).bind("keydown", "ctrl+s alt+s meta+s", function(e){
+    e.preventDefault();
+    viewModel.save();
+    return false;
+  });
+  % endif
+  $(window).bind("keydown", "esc", function () {
+    if ($(".demi-modal.fade.in").length > 0) {
+      $(".demi-modal.fade.in .demi-modal-chevron").click();
     }
-    else {
-      $("#shareModal input[type='text']").on("focus", function () {
-        this.select();
-      });
-      if (!window.location.origin) {
-        window.location.origin = window.location.protocol + "//" + window.location.hostname + (window.location.port ? ":" + window.location.port: "");
-      }
-      var _search = window.location.search;
-      var _pathname = window.location.pathname;
-      if (_pathname.indexOf("${ url('search:new_search') }") > -1) {
-        _pathname = "${ url('search:index') }";
-      }
-      if (_search == "" && window.location.hash.indexOf("collection") > -1) {
-        _search = "?" + window.location.hash.substr(1);
-      }
+  });
 
-      if (_search != "") {
-        $("#shareModal input[type='text']").val(window.location.origin + _pathname + _search + "#" + LZString.compressToBase64(ko.mapping.toJSON(viewModel.query))).focus();
-        $("#shareModal").modal("show");
-      }
-      else {
-        $(document).trigger("error", "${_('The current collection cannot be shared.')}");
+  $("#newqname").bind("keydown", "return", function (e) {
+    e.preventDefault();
+    viewModel.collection.addQDefinition();
+  });
+
+  $(document).on("loadedQDefinition", function() {
+    if ($(".demi-modal.fade.in").length > 0) {
+      $(".demi-modal.fade.in .demi-modal-chevron").click();
+    }
+  });
+
+  if (window.location.hash != "") {
+    if (window.location.hash.indexOf("q=") > -1) {
+      var _qdef = viewModel.collection.getQDefinition(window.location.hash.substr(1).replace(/(<([^>]+)>)/ig, "").split("=")[1]);
+      if (_qdef != null){
+        viewModel.collection.loadQDefinition(_qdef);
       }
     }
   }
+});
+
 
   function toggleGridFieldsSelection() {
     if (viewModel.collection.template.fields().length > 0) {

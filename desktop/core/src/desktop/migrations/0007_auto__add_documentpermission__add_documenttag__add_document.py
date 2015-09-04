@@ -1,4 +1,5 @@
 # encoding: utf-8
+import logging
 import datetime
 from south.db import db
 from south.v2 import SchemaMigration
@@ -6,9 +7,18 @@ from django.db import connection, models
 
 from desktop.models import Document
 
+LOG = logging.getLogger(__name__)
+
 class Migration(SchemaMigration):
 
     def forwards(self, orm):
+
+        # On SQLite, database transactions (which are used by
+        # `Document.objects.sync`) requires autocommit to be turned on. South
+        # however doesn't enable this by default.
+        if connection.vendor == 'sqlite':
+            autocommit = connection.get_autocommit()
+            connection.set_autocommit(True)
 
         # Adding model 'Document'
         if 'desktop_document' not in connection.introspection.table_names():
@@ -70,7 +80,11 @@ class Migration(SchemaMigration):
             ))
             db.create_unique('desktop_document_tags', ['document_id', 'documenttag_id'])
 
-        Document.objects.sync()
+        if not db.dry_run:
+            Document.objects.sync()
+
+        if connection.vendor == 'sqlite':
+            connection.set_autocommit(autocommit)
 
     def backwards(self, orm):
 
@@ -85,7 +99,7 @@ class Migration(SchemaMigration):
             # Removing M2M table for field groups on 'DocumentPermission'
             db.delete_table('desktop_documentpermission_groups')
         except:
-            pass
+            LOG.exception('failed to delete tables')
 
         # Remove new m2m fields
         try:
@@ -95,7 +109,7 @@ class Migration(SchemaMigration):
             # Removing M2M table for field groups on 'DocumentPermission'
             db.delete_table('documentpermission_groups')
         except:
-            pass
+            LOG.exception('failed to delete tables')
 
         # Deleting model 'DocumentTag'
         db.delete_table('desktop_documenttag')

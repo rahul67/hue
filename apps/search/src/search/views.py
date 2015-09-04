@@ -18,29 +18,29 @@
 import json
 import logging
 
-from django.core.urlresolvers import reverse
-from django.utils.encoding import smart_str, force_unicode
+from django.utils.encoding import force_unicode
 from django.utils.html import escape
 from django.utils.translation import ugettext as _
-from django.shortcuts import redirect
 
 from desktop.lib.django_util import JsonResponse, render
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.lib.rest.http_client import RestException
+from desktop.models import Document2, Document
 
 from libsolr.api import SolrApi
 from indexer.management.commands import indexer_setup
 
 from search.api import _guess_gap, _zoom_range_facet, _new_range_facet
-from search.conf import SOLR_URL
+from search.conf import SOLR_URL, LATEST
 from search.data_export import download as export_download
 from search.decorators import allow_owner_only, allow_viewer_only
 from search.management.commands import search_setup
-from search.models import Collection, augment_solr_response, augment_solr_exception, pairwise2
-from search.search_controller import SearchController
+from search.models import Collection2, augment_solr_response, augment_solr_exception, pairwise2
+from search.search_controller import SearchController, can_edit_index
 
 
 LOG = logging.getLogger(__name__)
+
 
 
 def index(request):
@@ -51,7 +51,9 @@ def index(request):
     return admin_collections(request, True)
 
   try:
-    collection = hue_collections.get(id=collection_id)
+    collection_doc = Document2.objects.get(id=collection_id)
+    collection_doc.doc.get().can_read_or_exception(request.user)
+    collection = Collection2(request.user, document=collection_doc)
   except Exception, e:
     raise PopupException(e, title=_("Dashboard does not exist or you don't have the permission to access it."))
 
@@ -60,8 +62,9 @@ def index(request):
   return render('search.mako', request, {
     'collection': collection,
     'query': query,
-    'initial': json.dumps({'collections': [], 'layout': []}),
-    'is_owner': request.user == collection.owner
+    'initial': json.dumps({'collections': [], 'layout': [], 'is_latest': LATEST.get()}),
+    'is_owner': collection_doc.doc.get().can_write(request.user),
+    'can_edit_index': can_edit_index(request.user)
   })
 
 
@@ -70,7 +73,7 @@ def new_search(request):
   if not collections:
     return no_collections(request)
 
-  collection = Collection(name=collections[0], label=collections[0])
+  collection = Collection2(user=request.user, name=collections[0])
   query = {'qs': [{'q': ''}], 'fqs': [], 'start': 0}
 
   return render('search.mako', request, {
@@ -81,15 +84,17 @@ def new_search(request):
          'layout': [
               {"size":2,"rows":[{"widgets":[]}],"drops":["temp"],"klass":"card card-home card-column span2"},
               {"size":10,"rows":[{"widgets":[
-                  {"size":12,"name":"Filter Bar","widgetType":"filter-widget",
+                  {"size":12,"name":"Filter Bar","widgetType":"filter-widget", "id":"99923aef-b233-9420-96c6-15d48293532b",
                    "properties":{},"offset":0,"isLoading":True,"klass":"card card-widget span12"}]},
                                  {"widgets":[
-                  {"size":12,"name":"Grid Results","widgetType":"resultset-widget",
+                  {"size":12,"name":"Grid Results","widgetType":"resultset-widget", "id":"14023aef-b233-9420-96c6-15d48293532b",
                    "properties":{},"offset":0,"isLoading":True,"klass":"card card-widget span12"}]}],
                  "drops":["temp"],"klass":"card card-home card-column span10"},
-         ]
+         ],
+         'is_latest': LATEST.get(),
      }),
-    'is_owner': True
+    'is_owner': True,
+    'can_edit_index': can_edit_index(request.user)
   })
 
 
@@ -98,7 +103,7 @@ def browse(request, name):
   if not collections:
     return no_collections(request)
 
-  collection = Collection(name=name, label=name)
+  collection = Collection2(user=request.user, name=name)
   query = {'qs': [{'q': ''}], 'fqs': [], 'start': 0}
 
   return render('search.mako', request, {
@@ -112,9 +117,11 @@ def browse(request, name):
                   {"size":12,"name":"Grid Results","id":"52f07188-f30f-1296-2450-f77e02e1a5c0","widgetType":"resultset-widget",
                    "properties":{},"offset":0,"isLoading":True,"klass":"card card-widget span12"}]}],
               "drops":["temp"],"klass":"card card-home card-column span10"}
-         ]
+         ],
+         'is_latest': LATEST.get()
      }),
-     'is_owner': True
+     'is_owner': True,
+     'can_edit_index': can_edit_index(request.user)
   })
 
 
@@ -134,11 +141,12 @@ def search(request):
       try:
         response['error'] = json.loads(e.message)['error']['msg']
       except:
-        response['error'] = force_unicode(str(e))
+        LOG.exception('failed to parse json response')
+        response['error'] = force_unicode(e)
     except Exception, e:
       raise PopupException(e, title=_('Error while accessing Solr'))
 
-      response['error'] = force_unicode(str(e))
+      response['error'] = force_unicode(e)
   else:
     response['error'] = _('There is no collection to search.')
 
@@ -159,17 +167,23 @@ def save(request):
 
   if collection:
     if collection['id']:
-      hue_collection = Collection.objects.get(id=collection['id'])
+      dashboard_doc = Document2.objects.get(id=collection['id'])
     else:
-      hue_collection = Collection.objects.create2(name=collection['name'], label=collection['label'], owner=request.user)
-    hue_collection.update_properties({'collection': collection})
-    hue_collection.update_properties({'layout': layout})
-    hue_collection.name = collection['name']
-    hue_collection.label = collection['label']
-    hue_collection.enabled = collection['enabled']
-    hue_collection.save()
+      dashboard_doc = Document2.objects.create(name=collection['name'], uuid=collection['uuid'], type='search-dashboard', owner=request.user, description=collection['label'])
+      Document.objects.link(dashboard_doc, owner=request.user, name=collection['name'], description=collection['label'], extra='search-dashboard')
+
+    dashboard_doc.update_data({
+        'collection': collection,
+        'layout': layout
+    })
+    dashboard_doc1 = dashboard_doc.doc.get()
+    dashboard_doc.name = dashboard_doc1.name = collection['label']
+    dashboard_doc.description = dashboard_doc1.description = collection['description']
+    dashboard_doc.save()
+    dashboard_doc1.save()
+
     response['status'] = 0
-    response['id'] = hue_collection.id
+    response['id'] = dashboard_doc.id
     response['message'] = _('Page saved !')
   else:
     response['message'] = _('There is no collection to search.')
@@ -205,16 +219,8 @@ def admin_collections(request, is_redirect=False):
   if request.GET.get('format') == 'json':
     collections = []
     for collection in existing_hue_collections:
-      massaged_collection = {
-        'id': collection.id,
-        'name': collection.name,
-        'label': collection.label,
-        'enabled': collection.enabled,
-        'isCoreOnly': collection.is_core_only,
-        'absoluteUrl': collection.get_absolute_url(),
-        'owner': collection.owner and collection.owner.username,
-        'isOwner': collection.owner == request.user or request.user.is_superuser
-      }
+      massaged_collection = collection.to_dict()
+      massaged_collection['isOwner'] = collection.doc.get().can_write(request.user)
       collections.append(massaged_collection)
     return JsonResponse(collections, safe=False)
 
@@ -237,7 +243,6 @@ def admin_collection_delete(request):
   return JsonResponse(response)
 
 
-@allow_owner_only
 def admin_collection_copy(request):
   if request.method != 'POST':
     raise PopupException(_('POST request required.'))
@@ -264,7 +269,7 @@ def query_suggest(request, collection_id, query=""):
     result['message'] = response
     result['status'] = 0
   except Exception, e:
-    result['message'] = unicode(str(e), "utf8")
+    result['message'] = force_unicode(e)
 
   return JsonResponse(result)
 
@@ -274,18 +279,17 @@ def index_fields_dynamic(request):
 
   try:
     name = request.POST['name']
-    hue_collection = Collection(name=name, label=name)
 
-    dynamic_fields = SolrApi(SOLR_URL.get(), request.user).luke(hue_collection.name)
+    dynamic_fields = SolrApi(SOLR_URL.get(), request.user).luke(name)
 
     result['message'] = ''
-    result['fields'] = [Collection._make_field(name, properties)
+    result['fields'] = [Collection2._make_field(name, properties)
                         for name, properties in dynamic_fields['fields'].iteritems() if 'dynamicBase' in properties]
-    result['gridlayout_header_fields'] = [Collection._make_gridlayout_header_field({'name': name}, True)
+    result['gridlayout_header_fields'] = [Collection2._make_gridlayout_header_field({'name': name}, True)
                                           for name, properties in dynamic_fields['fields'].iteritems() if 'dynamicBase' in properties]
     result['status'] = 0
   except Exception, e:
-    result['message'] = unicode(str(e), "utf8")
+    result['message'] = force_unicode(e)
 
   return JsonResponse(result)
 
@@ -311,7 +315,45 @@ def get_document(request):
       result['status'] = 1
 
   except Exception, e:
-    result['message'] = unicode(str(e), "utf8")
+    result['message'] = force_unicode(e)
+
+  return JsonResponse(result)
+
+
+@allow_viewer_only
+def update_document(request):
+  result = {'status': -1, 'message': 'Error'}
+
+  if not can_edit_index(request.user):
+    result['message'] = _('Permission to edit the document denied')
+    return JsonResponse(result)
+
+  try:
+    collection = json.loads(request.POST.get('collection', '{}'))
+    document = json.loads(request.POST.get('document', '{}'))
+    doc_id = request.POST.get('id')
+
+    if document['hasChanged']:
+      edits = {
+          "id": doc_id,
+      }
+      version = None # If there is a version, use it to avoid potential concurrent update conflicts
+
+      for field in document['details']:
+        if field['hasChanged']:
+          edits[field['key']] = {"set": field['value']}
+        if field['key'] == '_version_':
+          version = field['value']
+
+      if SolrApi(SOLR_URL.get(), request.user).update(collection['name'], json.dumps([edits]), content_type='json', version=version):
+        result['status'] = 0
+        result['message'] = _('Document successfully updated.')
+    else:
+      result['status'] = 0
+      result['message'] = _('Document has no modifications to change.')
+
+  except Exception, e:
+    result['message'] = force_unicode(e)
 
   return JsonResponse(result)
 
@@ -333,7 +375,7 @@ def get_stats(request):
     result['message'] = ''
 
   except Exception, e:
-    result['message'] = unicode(str(e), "utf8")
+    result['message'] = force_unicode(e)
     if 'not currently supported' in result['message']:
       result['status'] = 1
       result['message'] = _('This field does not support stats')
@@ -365,7 +407,7 @@ def get_terms(request):
     result['message'] = ''
 
   except Exception, e:
-    result['message'] = unicode(str(e), "utf8")
+    result['message'] = force_unicode(e)
     if 'not currently supported' in result['message']:
       result['status'] = 1
       result['message'] = _('This field does not support stats')
@@ -415,7 +457,7 @@ def get_timeline(request):
     result['status'] = 0
     result['message'] = ''
   except Exception, e:
-    result['message'] = unicode(str(e), "utf8")
+    result['message'] = force_unicode(e)
 
   return JsonResponse(result)
 
@@ -436,7 +478,7 @@ def new_facet(request):
     result['facet'] = _create_facet(collection, request.user, facet_id, facet_label, facet_field, widget_type)
     result['status'] = 0
   except Exception, e:
-    result['message'] = unicode(str(e), "utf8")
+    result['message'] = force_unicode(e)
 
   return JsonResponse(result)
 
@@ -448,11 +490,14 @@ def _create_facet(collection, user, facet_id, facet_label, facet_field, widget_t
     'stacked': False,
     'limit': 10,
     'mincount': 0,
-    'isDate': False
+    'isDate': False,
+    'aggregate': 'unique'
   }
 
   if widget_type in ('tree-widget', 'heatmap-widget', 'map-widget'):
     facet_type = 'pivot'
+  elif widget_type == 'hit-widget':
+    facet_type = 'function'
   else:
     solr_api = SolrApi(SOLR_URL.get(), user)
     range_properties = _new_range_facet(solr_api, collection, facet_field, widget_type)
@@ -463,14 +508,20 @@ def _create_facet(collection, user, facet_id, facet_label, facet_field, widget_t
       properties['initial_gap'] = properties['gap']
       properties['initial_start'] = properties['start']
       properties['initial_end'] = properties['end']
-    elif widget_type == 'hit-widget':
-      facet_type = 'query'
     else:
       facet_type = 'field'
+
+    if widget_type == 'bucket-widget':
+      facet_type = 'nested'
+      properties['facets_form'] = {'field': '', 'mincount': 1, 'limit': 10, 'aggregate': 'count'}
+      properties['facets'] = []
+      properties['scope'] = 'stack'
+      properties['timelineChartType'] = 'bar'
 
   if widget_type in ('tree-widget', 'heatmap-widget', 'map-widget'):
     properties['mincount'] = 1
     properties['facets'] = []
+    properties['stacked'] = True
     properties['facets_form'] = {'field': '', 'mincount': 1, 'limit': 5}
 
     if widget_type == 'map-widget':
@@ -509,7 +560,7 @@ def get_range_facet(request):
     result['status'] = 0
 
   except Exception, e:
-    result['message'] = unicode(str(e), "utf8")
+    result['message'] = force_unicode(e)
 
   return JsonResponse(result)
 
@@ -520,14 +571,14 @@ def get_collection(request):
   try:
     name = request.POST['name']
 
-    collection = Collection(name=name, label=name)
-    collection_json = collection.get_c(request.user)
+    collection = Collection2(request.user, name=name)
+    collection_json = collection.get_json(request.user)
 
     result['collection'] = json.loads(collection_json)
     result['status'] = 0
 
   except Exception, e:
-    result['message'] = unicode(str(e), "utf8")
+    result['message'] = force_unicode(e)
 
   return JsonResponse(result)
 
@@ -545,7 +596,7 @@ def get_collections(request):
       result['status'] = 0
       result['collection'] = [json.loads(request.POST.get('collection'))['name']]
     else:
-      result['message'] = unicode(str(e), "utf8")
+      result['message'] = force_unicode(e)
 
   return JsonResponse(result)
 

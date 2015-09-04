@@ -17,7 +17,7 @@
 
 <%namespace name="common" file="workflow-common.xml.mako" />
 
-    <action name="${ node['name'] }"${ common.credentials(node['properties']['credentials']) }>
+    <action name="${ node['name'] }"${ common.credentials(node['properties']['credentials']) }${ common.retry_max(node['properties']['retry_max']) }${ common.retry_interval(node['properties']['retry_interval']) }>
         <map-reduce>
             <job-tracker>${ '${' }jobTracker}</job-tracker>
             <name-node>${ '${' }nameNode}</name-node>
@@ -29,7 +29,7 @@
                 <reducer>${ node['properties']['reducer'] }</reducer>
                 % endif
             </streaming>
-            ${ common.configuration(node['properties']['properties']) }
+            ${ common.configuration(node['properties']['job_properties']) }
             ${ common.distributed_cache(node['properties']['files'], node['properties']['archives']) }
         </map-reduce>
         <ok to="${ node_mapping[node['children'][0]['to']].name }"/>

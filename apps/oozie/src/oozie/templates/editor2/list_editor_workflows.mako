@@ -15,7 +15,7 @@
 ## limitations under the License.
 
 <%!
-  from desktop.views import commonheader, commonfooter, commonshare
+  from desktop.views import commonheader, commonfooter, commonshare, commonimportexport, _ko
   from django.utils.translation import ugettext as _
 %>
 <%namespace name="actionbar" file="../actionbar.mako" />
@@ -46,7 +46,7 @@ ${ layout.menubar(section='workflows', is_editor=True) }
         <span style="padding-right:40px"></span>
 
         <a class="share-link btn" rel="tooltip" data-placement="bottom" data-bind="click: function(e){ oneSelected() ? prepareShareModal(e) : void(0) },
-          attr: {'data-original-title': '${ _("Share") } ' + name},
+          attr: {'data-original-title': '${ _ko("Share") } ' + name},
           css: {'disabled': ! oneSelected(), 'btn': true}">
           <i class="fa fa-users"></i> ${ _('Share') }
         </a>
@@ -59,11 +59,18 @@ ${ layout.menubar(section='workflows', is_editor=True) }
           <i class="fa fa-times"></i> ${ _('Delete') }
         </a>
 
+        <a data-bind="click: function() { atLeastOneSelected() ? exportDocuments() : void(0) }, css: {'btn': true, 'disabled': ! atLeastOneSelected() }">
+          <i class="fa fa-download"></i> ${ _('Export') }
+        </a>
       </div>
     </%def>
 
     <%def name="creation()">
       <a href="${ url('oozie:new_workflow') }" class="btn"><i class="fa fa-plus-circle"></i> ${ _('Create') }</a>
+
+      <a data-bind="click: function() { $('#import-documents').modal('show'); }" class="btn">
+        <i class="fa fa-upload"></i> ${ _('Import') }
+      </a>
     </%def>
   </%actionbar:render>
 
@@ -130,11 +137,12 @@ ${ layout.menubar(section='workflows', is_editor=True) }
 
 
 ${ commonshare() | n,unicode }
+${ commonimportexport(request) | n,unicode }
 
 
 <script src="${ static('desktop/ext/js/datatables-paging-0.1.js') }" type="text/javascript" charset="utf-8"></script>
-<script src="${ static('desktop/ext/js/knockout-min.js') }" type="text/javascript" charset="utf-8"></script>
-<script src="${ static('desktop/ext/js/knockout.mapping-2.3.2.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/ext/js/knockout.min.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/ext/js/knockout-mapping.min.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/js/share.vm.js') }"></script>
 <script src="${ static('oozie/js/editor2-utils.js') }" type="text/javascript" charset="utf-8"></script>
 
@@ -212,8 +220,13 @@ ${ commonshare() | n,unicode }
       });
     };
 
+    self.exportDocuments = function() {
+      $('#export-documents').find('input[name=\'documents\']').val(ko.mapping.toJSON($.map(viewModel.selectedJobs(), function(doc) { return doc.id(); })));
+      $('#export-documents').find('form').submit();
+    };
+
     self.prepareShareModal = function() {
-     shareViewModel.setDocId(self.selectedJobs()[0].doc1_id());
+      shareViewModel.setDocId(self.selectedJobs()[0].doc1_id());
       openShareModal();
     };
   }

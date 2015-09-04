@@ -14,7 +14,7 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
-from desktop.views import commonheader, commonfooter, commonshare
+from desktop.views import commonheader, commonfooter, commonshare, _ko
 from desktop import conf
 from django.utils.translation import ugettext as _
 %>
@@ -55,18 +55,18 @@ ${ commonheader(_("Workflow Editor"), "Oozie", user, "40px") | n,unicode }
 
     <a title="${ _('Workspace') }" target="_blank" rel="tooltip" data-placement="right"
         data-original-title="${ _('Go upload additional files and libraries to the deployment directory on HDFS') }"
-        data-bind="css: {'btn': true}, attr: { href: '/filebrowser/view' + $root.workflow.properties.deployment_dir() }">
+        data-bind="css: {'btn': true}, attr: { href: '/filebrowser/view=' + $root.workflow.properties.deployment_dir() }">
       <i class="fa fa-fw fa-folder-open"></i>
     </a>
 
     &nbsp;&nbsp;&nbsp;
 
-    <a title="${ _('Save') }" rel="tooltip" data-placement="bottom" data-loading-text="${ _("Saving...") }" data-bind="click: $root.save, css: {'btn': true, 'disabled': $root.isSaving()}, visible: canEdit">
+    <a title="${ _('Save') }" rel="tooltip" data-placement="bottom" data-loading-text="${ _("Saving...") }" data-bind="click: validateAndSave, css: {'btn': true, 'disabled': $root.isSaving()}, visible: canEdit">
       <i class="fa fa-fw fa-save"></i>
     </a>
 
     <a class="share-link btn" rel="tooltip" data-placement="bottom" data-bind="click: openShareModal,
-        attr: {'data-original-title': '${ _("Share") } ' + name},
+        attr: {'data-original-title': '${ _ko("Share") } ' + name},
         css: {'isShared': isShared(), 'btn': true},
         visible: workflow.id() != null && canEdit()">
       <i class="fa fa-users"></i>
@@ -218,7 +218,7 @@ ${ layout.menubar(section='workflows', is_editor=True, pullright=buttons) }
       <span data-bind="editable: $root.workflow.name, editableOptions: {enabled: $root.isEditing(), placement: 'right'}"></span>
     </div>
     <div class="object-description" style="text-align: center; margin-top: 10px">
-      <span data-bind="editable: $root.workflow.properties.description, editableOptions: {enabled: $root.isEditing(), placement: 'right', emptytext: '${_('Add a description...')}'}"></span>
+      <span data-bind="editable: $root.workflow.properties.description, editableOptions: {enabled: $root.isEditing(), placement: 'right', emptytext: '${_ko('Add a description...')}'}"></span>
     </div>
     </div>
   </div>
@@ -243,7 +243,7 @@ ${ workflow.render() }
           <input type="text" data-bind="value: value, valueUpdate:'afterkeydown', attr: { placeholder: help_text }" class="input-xlarge"/>
           <!-- /ko -->
           <!-- ko if: type() == 'textarea' -->
-          <textarea data-bind="value: value, valueUpdate:'afterkeydown'" class="input-xlarge"></textarea>
+          <textarea data-bind="value: value, valueUpdate:'afterkeydown'" class="input-xlarge" style="resize:both"></textarea>
           <!-- /ko -->
           <!-- ko if: type() == 'workflow' -->
           <select data-bind="options: $root.subworkflows, optionsText: 'name', optionsValue: 'value', value: value"></select>
@@ -293,8 +293,8 @@ ${ workflow.render() }
       <ul data-bind="foreach: $root.workflow.properties.parameters" class="unstyled">
         <!-- ko if: name() != 'oozie.use.system.libpath' -->
         <li>
-          <input type="text" data-bind="value: name"/>
-          <input type="text" data-bind="value: value"/>
+          <input type="text" data-bind="value: name" placeholder="${ _('Name, e.g. market') }"/>
+          <input type="text" data-bind="value: value" placeholder="${ _('Value, e.g. US') }"/>
           <a href="#" data-bind="click: function(){ $root.workflow.properties.parameters.remove(this); }">
             <i class="fa fa-minus"></i>
           </a>
@@ -312,8 +312,8 @@ ${ workflow.render() }
 	  <h4>${ _('Hadoop Properties') }</h4>
       <ul data-bind="foreach: $root.workflow.properties.properties" class="unstyled">
         <li>
-          <input type="text" data-bind="value: name"/>
-          <input type="text" data-bind="value: value"/>
+          <input type="text" data-bind="value: name" placeholder="${ _('Name, e.g. mapred.map.tasks') }"/>
+          <input type="text" data-bind="value: value" placeholder="${ _('Value, e.g. ${n}') }"/>
           <a href="#" data-bind="click: function(){ $root.workflow.properties.properties.remove(this); }">
             <i class="fa fa-minus"></i>
           </a>
@@ -330,7 +330,7 @@ ${ workflow.render() }
       <select class="input-xlarge" data-bind="value: $root.workflow.properties.schema_version, options: $root.workflow.versions"></select>
 
       <h4>${ _("Job XML") }</h4>
-      <input type="text" class="input-xlarge filechooser-input" data-bind="filechooser: $root.workflow.properties.job_xml, filechooserOptions: globalFilechooserOptions"/>
+      <input type="text" class="input-xlarge filechooser-input" data-bind="filechooser: $root.workflow.properties.job_xml, filechooserOptions: globalFilechooserOptions" placeholder="${ _('Path to job.xml') }"/>
       <span data-bind='template: { name: "common-fs-link", data: {path: $root.workflow.properties.job_xml(), with_label: false}}'></span>
 
       <h4>${ _('SLA Configuration') }</h4>
@@ -358,8 +358,6 @@ ${ workflow.render() }
 
 
 </div>
-
-<div id="exposeOverlay"></div>
 
 <link rel="stylesheet" href="${ static('desktop/ext/css/hue-filetypes.css') }">
 <link rel="stylesheet" href="${ static('desktop/ext/css/hue-charts.css') }">
@@ -394,6 +392,7 @@ ${ dashboard.import_bindings() }
 % endif
 </style>
 
+<div id="exposeOverlay"></div>
 
 <script type="text/javascript">
   ${ utils.slaGlobal() }
@@ -548,8 +547,44 @@ ${ dashboard.import_bindings() }
     $(document).trigger("drawArrows");
   }
 
+  function validateAndSave() {
+    validateFields();
+    if (viewModel.isInvalid() && viewModel.isEditing()) {
+      var $firstElWithErrors = $("[validate].with-errors").eq(0);
+      if (!$firstElWithErrors.is(":visible")) {
+        var widgetId = $firstElWithErrors.parents(".card-widget").attr("id").substr(4);
+        viewModel.getWidgetById(widgetId).ooziePropertiesExpanded(true);
+      }
+      window.setTimeout(function () {
+        $("html,body").animate({
+          "scrollTop": ($firstElWithErrors.offset().top - 150) + "px"
+        }, 500);
+      }, 200);
+    }
+
+    viewModel.save();
+  }
+
+  function validateFields() {
+    var _hasErrors = false;
+    $("[validate]").each(function () {
+      if ($(this).attr("validate") == "nonempty" && $.trim($(this).val()) == "") {
+        $(this).addClass("with-errors");
+        _hasErrors = true;
+      }
+      else {
+        $(this).removeClass("with-errors");
+      }
+    });
+    viewModel.isInvalid(_hasErrors);
+  }
+
   $(document).ready(function(){
     renderChangeables();
+
+    $(document).on("blur", "[validate]", function() {
+      validateFields();
+    });
 
     $("#exposeOverlay").on("click", exposeOverlayClickHandler);
 

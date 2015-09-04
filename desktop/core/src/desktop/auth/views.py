@@ -19,14 +19,14 @@
 try:
   import oauth2 as oauth
 except:
-  pass
+  oauth = None
 
 import cgi
-import datetime
 import logging
 import urllib
 
 import django.contrib.auth.views
+from axes.decorators import watch_login
 from django.core import urlresolvers
 from django.core.exceptions import SuspiciousOperation
 from django.contrib.auth import login, get_backends, authenticate
@@ -35,7 +35,8 @@ from django.contrib.sessions.models import Session
 from django.http import HttpResponseRedirect
 from django.utils.translation import ugettext as _
 from hadoop.fs.exceptions import WebHdfsException
-from useradmin.views import ensure_home_directory
+from useradmin.models import get_profile
+from useradmin.views import ensure_home_directory, require_change_password
 
 from desktop.auth import forms as auth_forms
 from desktop.lib.django_util import render
@@ -76,16 +77,17 @@ def first_login_ever():
   return False
 
 
-def get_backend_name():
-  return get_backends() and get_backends()[0].__class__.__name__
+def get_backend_names():
+  return get_backends and [backend.__class__.__name__ for backend in get_backends()]
 
 
 @login_notrequired
+@watch_login
 def dt_login(request):
   redirect_to = request.REQUEST.get('next', '/')
   is_first_login_ever = first_login_ever()
-  backend_name = get_backend_name()
-  is_active_directory = backend_name == 'LdapBackend' and ( bool(LDAP.NT_DOMAIN.get()) or bool(LDAP.LDAP_SERVERS.get()) )
+  backend_names = get_backend_names()
+  is_active_directory = 'LdapBackend' in backend_names and ( bool(LDAP.NT_DOMAIN.get()) or bool(LDAP.LDAP_SERVERS.get()) )
 
   if is_active_directory:
     UserCreationForm = auth_forms.LdapUserCreationForm
@@ -106,17 +108,26 @@ def dt_login(request):
         # Must login by using the AuthenticationForm.
         # It provides 'backends' on the User object.
         user = auth_form.get_user()
+        userprofile = get_profile(user)
+
         login(request, user)
+
         if request.session.test_cookie_worked():
           request.session.delete_test_cookie()
 
-        if is_first_login_ever or backend_name in ('AllowAllBackend', 'LdapBackend'):
+        if is_first_login_ever or 'AllowAllBackend' in backend_names or 'LdapBackend' in backend_names:
           # Create home directory for first user.
           try:
             ensure_home_directory(request.fs, user.username)
           except (IOError, WebHdfsException), e:
             LOG.error(_('Could not create home directory.'), exc_info=e)
             request.error(_('Could not create home directory.'))
+
+        if require_change_password(userprofile):
+          return HttpResponseRedirect(urlresolvers.reverse('useradmin.views.edit_user', kwargs={'username': user.username}))
+
+        userprofile.first_login = False
+        userprofile.save()
 
         access_warn(request, '"%s" login ok' % (user.username,))
         return HttpResponseRedirect(redirect_to)
@@ -141,7 +152,7 @@ def dt_login(request):
     'next': redirect_to,
     'first_login_ever': is_first_login_ever,
     'login_errors': request.method == 'POST',
-    'backend_name': backend_name,
+    'backend_names': backend_names,
     'active_directory': is_active_directory
   })
 
@@ -178,6 +189,8 @@ def _profile_dict(user):
 
 @login_notrequired
 def oauth_login(request):
+  assert oauth is not None
+
   consumer = oauth.Consumer(OAUTH.CONSUMER_KEY.get(), OAUTH.CONSUMER_SECRET.get())
   client = oauth.Client(consumer)
   resp, content = client.request(OAUTH.REQUEST_TOKEN_URL.get(), "POST", body=urllib.urlencode({

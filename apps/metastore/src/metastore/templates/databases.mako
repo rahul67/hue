@@ -14,6 +14,7 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
+from desktop.lib.i18n import smart_unicode
 from desktop.views import commonheader, commonfooter
 from django.utils.translation import ugettext as _
 %>
@@ -42,7 +43,9 @@ ${ components.menubar() }
         <h1 class="card-heading simple">${ components.breadcrumbs(breadcrumbs) }</h1>
         <%actionbar:render>
           <%def name="search()">
-            <input id="filterInput" type="text" class="input-xlarge search-query" placeholder="${_('Search for database name')}">
+            <form id="searchQueryForm" action="${ url('metastore:databases') }" method="GET" class="inline">
+              <input id="filterInput" type="text" name="filter" class="input-xlarge search-query" value="${ search_filter }" placeholder="${_('Search for database name')}" />
+            </form>
           </%def>
 
           <%def name="actions()">
@@ -69,7 +72,7 @@ ${ components.menubar() }
                    data-row-selector-exclude="true"></div>
               </td>
               <td>
-                <a href="${ url('metastore:show_tables', database=database) }" data-row-selector="true">${ database }</a>
+                <a class="databaseLink" href="${ url('metastore:show_tables', database=database) }" data-row-selector="true">${ database }</a>
               </td>
             </tr>
           % endfor
@@ -99,7 +102,7 @@ ${ components.menubar() }
 
 <link rel="stylesheet" href="${ static('metastore/css/metastore.css') }" type="text/css">
 
-<script src="${ static('desktop/ext/js/knockout-min.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/ext/js/knockout.min.js') }" type="text/javascript" charset="utf-8"></script>
 
 <script type="text/javascript" charset="utf-8">
   $(document).ready(function () {
@@ -115,10 +118,9 @@ ${ components.menubar() }
       "bPaginate": false,
       "bLengthChange": false,
       "bInfo": false,
-      "bFilter": true,
       "aoColumns": [
         {"bSortable": false, "sWidth": "1%" },
-        null
+        null,
       ],
       "oLanguage": {
         "sEmptyTable": "${_('No data available')}",
@@ -126,9 +128,16 @@ ${ components.menubar() }
       }
     });
 
-    $("#filterInput").keyup(function () {
-      databases.fnFilter($(this).val());
+    var _searchInputValue = $("#filterInput").val();
+
+    $("#filterInput").jHueDelayedInput(function(){
+      if ($("#filterInput").val() != _searchInputValue){
+        $("#searchQueryForm").submit();
+      }
     });
+
+    $("#filterInput").focus();
+    $("#filterInput").val(_searchInputValue); // set caret at the end of the field
 
     $("a[data-row-selector='true']").jHueRowSelector();
 
@@ -153,6 +162,21 @@ ${ components.menubar() }
       }
       $(".selectAll").removeAttr("checked").removeClass("fa-check");
       toggleActions();
+    });
+
+    $(".databaseLink").mouseover(function() {
+      var _link = $(this);
+      $.ajax({
+        type: "GET",
+        url: "/metastore/databases/" + $(this).text() + "/metadata",
+        dataType: "json",
+        data: {},
+        success: function (response) {
+          if (response && response.status == 0) {
+            _link.attr("title", response.data.comment).tooltip("show");
+          }
+        },
+      });
     });
 
     function toggleActions() {

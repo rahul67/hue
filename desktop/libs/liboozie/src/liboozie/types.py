@@ -274,6 +274,9 @@ class BundleAction(Action):
 
   def get_progress(self):
     """How much more time before the next action."""
+    if self.lastAction is None:
+      return 0
+      
     next = mktime(parse_timestamp(self.lastAction))
     start = mktime(parse_timestamp(self.startTime))
     end = mktime(parse_timestamp(self.endTime))
@@ -486,7 +489,8 @@ class Coordinator(Job):
     'timeUnit',
     'timeZone',
     'user',
-    'bundleId'
+    'bundleId',
+    'total'
   ]
   ACTION = CoordinatorAction
   RUNNING_STATUSES = set(['PREP', 'RUNNING', 'RUNNINGWITHERROR', 'PREPSUSPENDED', 'SUSPENDED', 'SUSPENDEDWITHERROR', 'PREPPAUSED', 'PAUSED', 'PAUSEDWITHERROR'])
@@ -499,6 +503,10 @@ class Coordinator(Job):
       self.nextMaterializedTime = parse_timestamp(self.nextMaterializedTime)
     else:
       self.nextMaterializedTime = self.startTime
+
+    if self.pauseTime:
+      self.pauseTime = parse_timestamp(self.pauseTime)
+
 
     # For when listing/mixing all the jobs together
     self.id = self.coordJobId

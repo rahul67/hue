@@ -1,89 +1,102 @@
+/*
+ * Licensed to Cloudera, Inc. under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  Cloudera, Inc. licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.cloudera.hue.livy.server
 
-import com.cloudera.hue.livy.Logging
-import com.cloudera.hue.livy.server.sessions.Session
+import java.util.concurrent.atomic.AtomicInteger
 
-import scala.collection.concurrent.TrieMap
-import scala.concurrent.duration.Duration
-import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutor, Future}
+import com.cloudera.hue.livy.{LivyConf, Logging}
+import org.json4s.JValue
 
-object SessionManager {
-  // Time in milliseconds; TODO: make configurable
-  val TIMEOUT = 60000
+import scala.collection.mutable
+import scala.concurrent.{ExecutionContext, Future}
 
-  // Time in milliseconds; TODO: make configurable
-  val GC_PERIOD = 1000 * 60 * 60
-}
+class SessionManager[S <: Session](livyConf: LivyConf, factory: SessionFactory[S])
+  extends Logging {
 
-class SessionManager(factory: SessionFactory) extends Logging {
+  private implicit def executor: ExecutionContext = ExecutionContext.global
 
-  private implicit def executor: ExecutionContextExecutor = ExecutionContext.global
+  private[this] val _idCounter = new AtomicInteger()
+  private[this] val _sessions = mutable.Map[Int, S]()
 
-  private val sessions = new TrieMap[String, Session]()
-
-  private val garbageCollector = new GarbageCollector(this)
+  private[this] val sessionTimeout = livyConf.getInt("livy.server.session.timeout", 1000 * 60 * 60)
+  private[this] val garbageCollector = new GarbageCollector
+  garbageCollector.setDaemon(true)
   garbageCollector.start()
 
-  def get(id: String): Option[Session] = {
-    sessions.get(id)
-  }
+  def create(createRequest: JValue): S = {
+    val id = _idCounter.getAndIncrement
+    val session: S = factory.create(id, createRequest)
 
-  def getSessionIds = {
-    sessions.keys
-  }
+    info("created session %s" format session.id)
 
-  def createSession(lang: String): Future[Session] = {
-    val session = factory.createSession(lang)
-
-    session.map({ case(session: Session) =>
-      info("created session %s" format session.id)
-      sessions.put(session.id, session)
+    synchronized {
+      _sessions.put(session.id, session)
       session
-    })
-  }
-
-  def shutdown(): Unit = {
-    Await.result(Future.sequence(sessions.values.map(delete)), Duration.Inf)
-    garbageCollector.shutdown()
-  }
-
-  def delete(sessionId: String): Future[Unit] = {
-    sessions.get(sessionId) match {
-      case Some(session) => delete(session)
-      case None => Future.successful(Unit)
     }
   }
 
-  def delete(session: Session): Future[Unit] = {
+  def get(id: Int): Option[S] = _sessions.get(id)
+
+  def size(): Int = _sessions.size
+
+  def all(): Iterable[S] = _sessions.values
+
+  def delete(id: Int): Option[Future[Unit]] = {
+    get(id).map(delete)
+  }
+
+  def delete(session: S): Future[Unit] = {
     session.stop().map { case _ =>
-        sessions.remove(session.id)
-        Unit
+      synchronized {
+        _sessions.remove(session.id)
+      }
+
+      Unit
     }
   }
+
+  def shutdown(): Unit = {}
 
   def collectGarbage() = {
     def expired(session: Session): Boolean = {
-      System.currentTimeMillis() - session.lastActivity > SessionManager.TIMEOUT
+      session.lastActivity match {
+        case Some(lastActivity) => System.currentTimeMillis() - lastActivity > sessionTimeout
+        case None => false
+      }
     }
 
-    sessions.values.filter(expired).foreach(delete)
+    all().filter(expired).foreach(delete)
   }
-}
 
-class SessionNotFound extends Exception
+  private class GarbageCollector extends Thread("session gc thread") {
 
-private class GarbageCollector(sessionManager: SessionManager) extends Thread {
+    private var finished = false
 
-  private var finished = false
-
-  override def run(): Unit = {
-    while (!finished) {
-      sessionManager.collectGarbage()
-      Thread.sleep(SessionManager.GC_PERIOD)
+    override def run(): Unit = {
+      while (!finished) {
+        collectGarbage()
+        Thread.sleep(60 * 1000)
+      }
     }
-  }
 
-  def shutdown(): Unit = {
-    finished = true
+    def shutdown(): Unit = {
+      finished = true
+    }
   }
 }

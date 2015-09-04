@@ -1,75 +1,69 @@
+/*
+ * Licensed to Cloudera, Inc. under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  Cloudera, Inc. licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.cloudera.hue.livy.yarn
 
-import java.io.{BufferedReader, InputStreamReader}
-import java.lang.ProcessBuilder.Redirect
+import java.io.{InputStream, BufferedReader, InputStreamReader}
 
-import com.cloudera.hue.livy.{LivyConf, Logging, Utils}
+import com.cloudera.hue.livy.yarn.Client._
+import com.cloudera.hue.livy.{Utils, LineBufferedProcess, LivyConf, Logging}
 import org.apache.hadoop.yarn.api.records.{ApplicationId, FinalApplicationStatus, YarnApplicationState}
 import org.apache.hadoop.yarn.client.api.YarnClient
 import org.apache.hadoop.yarn.conf.YarnConfiguration
 import org.apache.hadoop.yarn.util.ConverterUtils
+import org.apache.hadoop.fs.Path
 
 import scala.annotation.tailrec
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.ExecutionContext
+import scala.io.Source
 
-object Client extends Logging {
-  private val LIVY_JAR = "__livy__.jar"
-  private val CONF_LIVY_JAR = "livy.yarn.jar"
-  private val LOCAL_SCHEME = "local"
+object Client {
   private lazy val regex = """Application report for (\w+)""".r.unanchored
 
-  private def livyJar(conf: LivyConf) = {
-    if (conf.contains(CONF_LIVY_JAR)) {
-      conf.get(CONF_LIVY_JAR)
-    } else {
-      Utils.jarOfClass(classOf[Client]).head
-    }
-  }
+  sealed trait ApplicationStatus
+  case class New() extends ApplicationStatus
+  case class Accepted() extends ApplicationStatus
+  case class Running() extends ApplicationStatus
+  case class SuccessfulFinish() extends ApplicationStatus
+  case class UnsuccessfulFinish() extends ApplicationStatus
 }
 
 class FailedToSubmitApplication extends Exception
 
 class Client(livyConf: LivyConf) extends Logging {
-  import com.cloudera.hue.livy.yarn.Client._
+  import Client._
 
   protected implicit def executor: ExecutionContext = ExecutionContext.global
 
-  val yarnConf = new YarnConfiguration()
-  val yarnClient = YarnClient.createYarnClient()
+  private[this] val yarnConf = new YarnConfiguration()
+  private[this] val yarnClient = YarnClient.createYarnClient()
+  val path = new Path(sys.env("HADOOP_CONF_DIR") + YarnConfiguration.YARN_SITE_CONFIGURATION_FILE)
+  yarnConf.addResource(path)
+  val rm_address = yarnConf.get(YarnConfiguration.RM_ADDRESS)
+  info(s"Resource Manager address: $rm_address")
+
   yarnClient.init(yarnConf)
   yarnClient.start()
 
-  def submitApplication(id: String, lang: String, callbackUrl: String): Future[Job] = {
-    val url = f"$callbackUrl/sessions/$id/callback"
-
-    val livyJar: String = livyConf.getOption("livy.yarn.jar")
-      .getOrElse(Utils.jarOfClass(classOf[Client]).head)
-
-    val builder: ProcessBuilder = new ProcessBuilder(
-      "spark-submit",
-      "--master", "yarn-cluster",
-      "--class", "com.cloudera.hue.livy.repl.Main",
-      "--driver-java-options", f"-Dlivy.repl.callback-url=$url -Dlivy.repl.port=0",
-      livyJar,
-      lang
-    )
-
-    builder.redirectOutput(Redirect.PIPE)
-    builder.redirectErrorStream(true)
-
-    Future {
-
-      val process = builder.start()
-
-      val stdout = new BufferedReader(new InputStreamReader(process.getInputStream), 1)
-
-      val applicationId = parseApplicationId(stdout).getOrElse(throw new FailedToSubmitApplication)
-
-      // Application has been submitted, so we don't need to keep the process around anymore.
-      stdout.close()
-      process.destroy()
-
-      new Job(yarnClient, ConverterUtils.toApplicationId(applicationId))
+  def getJobFromProcess(process: LineBufferedProcess): Job = {
+    parseApplicationId(process.inputIterator) match {
+      case Some(appId) => new Job(yarnClient, ConverterUtils.toApplicationId(appId))
+      case None => throw new FailedToSubmitApplication
     }
   }
 
@@ -78,17 +72,15 @@ class Client(livyConf: LivyConf) extends Logging {
   }
 
   @tailrec
-  private def parseApplicationId(stdout: BufferedReader): Option[String] = {
-    Option(stdout.readLine()) match {
-      case Some(line) =>
-        info(f"shell output: $line")
-
-        line match {
-          case regex(applicationId) => Some(applicationId)
-          case _ => parseApplicationId(stdout)
-        }
-      case None =>
-        None
+  private def parseApplicationId(lines: Iterator[String]): Option[String] = {
+    if (lines.hasNext) {
+      val line = lines.next()
+      line match {
+        case regex(applicationId) => Some(applicationId)
+        case _ => parseApplicationId(lines)
+      }
+    } else {
+      None
     }
   }
 }
@@ -100,9 +92,8 @@ class Job(yarnClient: YarnClient, appId: ApplicationId) {
     while (System.currentTimeMillis() - startTimeMs < timeoutMs) {
       val status = getStatus
       status match {
-        case SuccessfulFinish() | UnsuccessfulFinish() => {
+        case SuccessfulFinish() | UnsuccessfulFinish() =>
           return Some(status)
-        }
         case _ =>
       }
 
@@ -153,9 +144,13 @@ class Job(yarnClient: YarnClient, appId: ApplicationId) {
     statusResponse.getRpcPort
   }
 
-  private def getStatus: ApplicationStatus = {
+  def getStatus: ApplicationStatus = {
     val statusResponse = yarnClient.getApplicationReport(appId)
     convertState(statusResponse.getYarnApplicationState, statusResponse.getFinalApplicationStatus)
+  }
+
+  def stop(): Unit = {
+    yarnClient.killApplication(appId)
   }
 
   private def convertState(state: YarnApplicationState, status: FinalApplicationStatus): ApplicationStatus = {
@@ -172,10 +167,3 @@ class Job(yarnClient: YarnClient, appId: ApplicationId) {
     }
   }
 }
-
-trait ApplicationStatus
-case class New() extends ApplicationStatus
-case class Accepted() extends ApplicationStatus
-case class Running() extends ApplicationStatus
-case class SuccessfulFinish() extends ApplicationStatus
-case class UnsuccessfulFinish() extends ApplicationStatus

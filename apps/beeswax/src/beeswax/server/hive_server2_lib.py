@@ -17,6 +17,7 @@
 
 import logging
 import itertools
+import json
 import re
 
 from itertools import imap
@@ -84,6 +85,7 @@ class HiveServerTable(Table):
     try:
       return [PartitionKeyCompatible(row['col_name'], row['data_type'], row['comment']) for row in self._get_partition_column()]
     except:
+      LOG.exception('failed to get partition keys')
       return []
 
   @property
@@ -94,16 +96,20 @@ class HiveServerTable(Table):
       if rows:
         return rows[0]['data_type']
     except:
+      LOG.exception('failed to get path location')
       return None
 
   @property
   def cols(self):
     rows = self.describe
+    col_row_index = 2
     try:
-      col_row_index = 2
       end_cols_index = map(itemgetter('col_name'), rows[col_row_index:]).index('')
       return rows[col_row_index:][:end_cols_index] + self._get_partition_column()
+    except ValueError:  # DESCRIBE on columns and nested columns does not contain add'l rows beyond cols
+      return rows[col_row_index:]
     except:
+      # Impala does not have it
       return rows
 
   def _get_partition_column(self):
@@ -113,6 +119,7 @@ class HiveServerTable(Table):
       end_cols_index = map(itemgetter('col_name'), rows[col_row_index:]).index('')
       return rows[col_row_index:][:end_cols_index]
     except:
+      # Impala does not have it
       return []
 
   @property
@@ -124,7 +131,19 @@ class HiveServerTable(Table):
     rows = self.describe
     col_row_index = 2
     end_cols_index = map(itemgetter('col_name'), rows[col_row_index:]).index('')
-    return rows[col_row_index + end_cols_index + 1:]
+    return [{
+          'col_name': prop['col_name'].strip() if prop['col_name'] else prop['col_name'],
+          'data_type': prop['data_type'].strip() if prop['data_type'] else prop['data_type'],
+          'comment': prop['comment'].strip() if prop['comment'] else prop['comment']
+        } for prop in rows[col_row_index + end_cols_index + 1:]
+    ]
+
+  @property
+  def stats(self):
+    rows = self.properties
+    col_row_index = map(itemgetter('col_name'), rows).index('Table Parameters:') + 1
+    end_cols_index = map(itemgetter('data_type'), rows[col_row_index:]).index(None)
+    return rows[col_row_index:][:end_cols_index]
 
 
 class HiveServerTRowSet2:
@@ -231,7 +250,10 @@ class HiveServerTColumnValue2:
     if bytestring == '' or re.match('^(\x00)+$', bytestring): # HS2 has just \x00 or '', Impala can have \x00\x00...
       return values
     else:
-      return [None if is_null else value for value, is_null in itertools.izip(values, cls.mark_nulls(values, bytestring))]
+      _values = [None if is_null else value for value, is_null in itertools.izip(values, cls.mark_nulls(values, bytestring))]
+      if len(values) != len(_values): # HS2 can have just \x00\x01 instead of \x00\x01\x00...
+        _values.extend(values[len(_values):])
+      return _values
 
 
 class HiveServerDataTable(DataTable):
@@ -475,7 +497,7 @@ class HiveServerClient:
     else:
       hive_mechanism = hive_site.get_hiveserver2_authentication()
       if hive_mechanism not in HiveServerClient.HS2_MECHANISMS:
-        raise Exception(_('%s server authentication not supported. Valid are %s.' % (hive_mechanism, HiveServerClient.HS2_MECHANISMS.keys())))
+        raise Exception(_('%s server authentication not supported. Valid are %s.') % (hive_mechanism, HiveServerClient.HS2_MECHANISMS.keys()))
       use_sasl = hive_mechanism in ('KERBEROS', 'NONE', 'LDAP')
       mechanism = HiveServerClient.HS2_MECHANISMS[hive_mechanism]
       impersonation_enabled = hive_site.hiveserver2_impersonation_enabled()
@@ -513,13 +535,15 @@ class HiveServerClient:
     LOG.info('Opening session %s' % sessionId)
 
     encoded_status, encoded_guid = HiveServerQueryHandle(secret=sessionId.secret, guid=sessionId.guid).get()
+    properties = json.dumps(res.configuration)
 
     return Session.objects.create(owner=user,
                                   application=self.query_server['server_name'],
                                   status_code=res.status.statusCode,
                                   secret=encoded_status,
                                   guid=encoded_guid,
-                                  server_protocol_version=res.serverProtocolVersion)
+                                  server_protocol_version=res.serverProtocolVersion,
+                                  properties=properties)
 
 
   def call(self, fn, req, status=TStatusCode.SUCCESS_STATUS):
@@ -565,11 +589,41 @@ class HiveServerClient:
     req = TGetSchemasReq()
     res = self.call(self._client.GetSchemas, req)
 
-    results, schema = self.fetch_result(res.operationHandle, orientation=TFetchOrientation.FETCH_NEXT)
+    results, schema = self.fetch_result(res.operationHandle, orientation=TFetchOrientation.FETCH_NEXT, max_rows=5000)
     self.close_operation(res.operationHandle)
 
     col = 'TABLE_SCHEM'
     return HiveServerTRowSet(results.results, schema.schema).cols((col,))
+
+
+  def get_database(self, database):
+    if self.query_server['server_name'] == 'impala':
+      raise NotImplementedError(_("Impala has not implemented the 'DESCRIBE DATABASE' command: %(issue_ref)s") % {
+        'issue_ref': "https://issues.cloudera.org/browse/IMPALA-2196"
+      })
+
+    query = 'DESCRIBE DATABASE EXTENDED `%s`' % (database)
+
+    (desc_results, desc_schema), operation_handle = self.execute_statement(query, max_rows=5000, orientation=TFetchOrientation.FETCH_NEXT)
+    self.close_operation(operation_handle)
+
+    cols = ('db_name', 'comment', 'location')
+
+    if len(HiveServerTRowSet(desc_results.results, desc_schema.schema).cols(cols)) != 1:
+      raise ValueError(_("%(query)s returned more than 1 row") % {'query': query})
+
+    return HiveServerTRowSet(desc_results.results, desc_schema.schema).cols(cols)[0]  # Should only contain one row
+
+
+  def get_tables_meta(self, database, table_names):
+    req = TGetTablesReq(schemaName=database, tableName=table_names)
+    res = self.call(self._client.GetTables, req)
+
+    results, schema = self.fetch_result(res.operationHandle, orientation=TFetchOrientation.FETCH_NEXT, max_rows=5000)
+    self.close_operation(res.operationHandle)
+
+    cols = ('TABLE_NAME', 'TABLE_TYPE', 'REMARKS')
+    return HiveServerTRowSet(results.results, schema.schema).cols(cols)
 
 
   def get_tables(self, database, table_names):
@@ -582,14 +636,18 @@ class HiveServerClient:
     return HiveServerTRowSet(results.results, schema.schema).cols(('TABLE_NAME',))
 
 
-  def get_table(self, database, table_name):
+  def get_table(self, database, table_name, partition_spec=None):
     req = TGetTablesReq(schemaName=database, tableName=table_name)
     res = self.call(self._client.GetTables, req)
 
     table_results, table_schema = self.fetch_result(res.operationHandle, orientation=TFetchOrientation.FETCH_NEXT)
     self.close_operation(res.operationHandle)
 
-    query = 'DESCRIBE FORMATTED %s' % table_name
+    if partition_spec:
+      query = 'DESCRIBE FORMATTED `%s`.`%s` PARTITION(%s)' % (database, table_name, partition_spec)
+    else:
+      query = 'DESCRIBE FORMATTED `%s`.`%s`' % (database, table_name)
+
     (desc_results, desc_schema), operation_handle = self.execute_statement(query, max_rows=5000, orientation=TFetchOrientation.FETCH_NEXT)
     self.close_operation(operation_handle)
 
@@ -601,8 +659,8 @@ class HiveServerClient:
     return self.execute_query_statement(statement=query.query['query'], max_rows=max_rows, configuration=configuration)
 
 
-  def execute_query_statement(self, statement, max_rows=1000, configuration={}):
-    (results, schema), operation_handle = self.execute_statement(statement=statement, max_rows=max_rows, configuration=configuration)
+  def execute_query_statement(self, statement, max_rows=1000, configuration={}, orientation=TFetchOrientation.FETCH_FIRST):
+    (results, schema), operation_handle = self.execute_statement(statement=statement, max_rows=max_rows, configuration=configuration, orientation=orientation)
     return HiveServerDataTable(results, schema, operation_handle, self.query_server)
 
 
@@ -625,7 +683,7 @@ class HiveServerClient:
     return self.execute_async_statement(statement=query_statement, confOverlay=configuration)
 
 
-  def execute_statement(self, statement, max_rows=1000, configuration={}, orientation=TFetchOrientation.FETCH_FIRST):
+  def execute_statement(self, statement, max_rows=1000, configuration={}, orientation=TFetchOrientation.FETCH_NEXT):
     if self.query_server['server_name'] == 'impala' and self.query_server['QUERY_TIMEOUT_S'] > 0:
       configuration['QUERY_TIMEOUT_S'] = str(self.query_server['QUERY_TIMEOUT_S'])
 
@@ -711,7 +769,7 @@ class HiveServerClient:
   def explain(self, query):
     query_statement = query.get_query_statement(0)
     configuration = self._get_query_configuration(query)
-    return self.execute_query_statement(statement='EXPLAIN %s' % query_statement, configuration=configuration)
+    return self.execute_query_statement(statement='EXPLAIN %s' % query_statement, configuration=configuration, orientation=TFetchOrientation.FETCH_NEXT)
 
 
   def get_log(self, operation_handle):
@@ -720,10 +778,12 @@ class HiveServerClient:
       res = self.call(self._client.GetLog, req)
       return res.log
     except:
+      LOG.exception('server does not support GetLog')
+
       return 'Server does not support GetLog()'
 
 
-  def get_partitions(self, database, table_name, max_parts):
+  def get_partitions(self, database, table_name, partition_spec=None, max_parts=None, reverse_sort=True):
     table = self.get_table(database, table_name)
 
     if max_parts is None or max_parts <= 0:
@@ -731,8 +791,18 @@ class HiveServerClient:
     else:
       max_rows = 1000 if max_parts <= 250 else max_parts
 
-    partitionTable = self.execute_query_statement('SHOW PARTITIONS %s.%s' % (database, table_name), max_rows=max_rows)
-    return [PartitionValueCompatible(partition, table) for partition in partitionTable.rows()][-max_parts:]
+    query = 'SHOW PARTITIONS `%s`.`%s`' % (database, table_name)
+    if partition_spec:
+      query += ' PARTITION(%s)' % partition_spec
+
+    partition_table = self.execute_query_statement(query, max_rows=max_rows)
+
+    partitions = [PartitionValueCompatible(partition, table) for partition in partition_table.rows()]
+
+    if reverse_sort:
+      partitions.reverse()
+
+    return partitions[:max_parts]
 
 
   def _get_query_configuration(self, query):
@@ -754,8 +824,8 @@ class HiveServerTableCompatible(HiveServerTable):
   def cols(self):
     return [
         type('Col', (object,), {
-          'name': col.get('col_name', '').strip(),
-          'type': col.get('data_type', '').strip(),
+          'name': col.get('col_name', '').strip() if col.get('col_name') else '',
+          'type': col.get('data_type', '').strip() if col.get('data_type') else '',
           'comment': col.get('comment', '').strip() if col.get('comment') else ''
         }) for col in HiveServerTable.cols.fget(self)
   ]
@@ -797,10 +867,15 @@ class PartitionKeyCompatible:
 
 class PartitionValueCompatible:
 
-  def __init__(self, partition, table):
+  def __init__(self, partition_row, table, properties=None):
+    if properties is None:
+      properties = {}
     # Parses: ['datehour=2013022516'] or ['month=2011-07/dt=2011-07-01/hr=12']
-    self.values = [val.split('=')[1] for part in partition for val in part.split('/')]
-    self.sd = type('Sd', (object,), {'location': '%s/%s' % (table.path_location, ','.join(partition)),})
+    partition = partition_row[0]
+    parts = partition.split('/')
+    self.partition_spec = ','.join(["%s='%s'" % (pv[0], pv[1]) for pv in [part.split('=') for part in parts]])
+    self.values = [pv[1] for pv in [part.split('=') for part in parts]]
+    self.sd = type('Sd', (object,), properties,)
 
 
 class ExplainCompatible:
@@ -909,14 +984,30 @@ class HiveServerClientCompatible(object):
     return [table[col] for table in self._client.get_databases()]
 
 
+  def get_database(self, database):
+    return self._client.get_database(database)
+
+
+  def get_tables_meta(self, database, table_names):
+    tables = self._client.get_tables_meta(database, table_names)
+    massaged_tables = []
+    for table in tables:
+      massaged_tables.append({
+        'name': table['TABLE_NAME'],
+        'comment': table['REMARKS'],
+        'type': table['TABLE_TYPE'].capitalize()}
+      )
+    return massaged_tables
+
+
   def get_tables(self, database, table_names):
     tables = [table['TABLE_NAME'] for table in self._client.get_tables(database, table_names)]
     tables.sort()
     return tables
 
 
-  def get_table(self, database, table_name):
-    table = self._client.get_table(database, table_name)
+  def get_table(self, database, table_name, partition_spec=None):
+    table = self._client.get_table(database, table_name, partition_spec)
     return HiveServerTableCompatible(table)
 
 
@@ -936,9 +1027,6 @@ class HiveServerClientCompatible(object):
   def create_database(self, name, description): raise NotImplementedError()
 
 
-  def get_database(self, *args, **kwargs): raise NotImplementedError()
-
-
   def alter_table(self, dbname, tbl_name, new_tbl): raise NotImplementedError()
 
 
@@ -952,8 +1040,8 @@ class HiveServerClientCompatible(object):
   def get_partition(self, *args, **kwargs): raise NotImplementedError()
 
 
-  def get_partitions(self, database, table_name, max_parts):
-    return self._client.get_partitions(database, table_name, max_parts)
+  def get_partitions(self, database, table_name, partition_spec, max_parts, reverse_sort=True):
+    return self._client.get_partitions(database, table_name, partition_spec, max_parts, reverse_sort)
 
 
   def alter_partition(self, db_name, tbl_name, new_part): raise NotImplementedError()

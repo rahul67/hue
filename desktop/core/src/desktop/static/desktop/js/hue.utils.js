@@ -169,3 +169,53 @@ function s4() {
 function UUID() {
   return s4() + s4() + '-' + s4() + '-' + s4() + '-' + s4() + '-' + s4() + s4() + s4();
 }
+
+// Based on original pub/sub implementation from http://davidwalsh.name/pubsub-javascript
+var huePubSub = (function () {
+  var topics = {};
+  var hOP = topics.hasOwnProperty;
+
+  return {
+    subscribe: function (topic, listener) {
+      if(! hOP.call(topics, topic)) {
+        topics[topic] = [];
+      }
+
+      var index = topics[topic].push(listener) - 1;
+
+      return {
+        remove: function () {
+          delete topics[topic][index];
+        }
+      };
+    },
+    subscribeOnce: function (topic, listener) {
+      var ephemeral = this.subscribe(topic, function(){
+        listener.apply(arguments);
+        ephemeral.remove();
+      });
+
+    },
+    publish: function (topic, info) {
+      if (! hOP.call(topics, topic)) {
+        return;
+      }
+
+      topics[topic].forEach(function (item) {
+        item(info != undefined ? info : {});
+      });
+    }
+  };
+})();
+
+Number.prototype.toHHMMSS = function () {
+  var _s = this;
+  var _ms = _s % 1000;
+  _s = (_s - _ms) / 1000;
+  var _secs = _s % 60;
+  _s = (_s - _secs) / 60;
+  var _mins = _s % 60;
+  var _hrs = (_s - _mins) / 60;
+
+  return (_hrs > 0 ? _hrs + "h, " : "") + (_mins > 0 ? _mins + "m, " : "") + _secs + "." + _ms + "s";
+}

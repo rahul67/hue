@@ -15,11 +15,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import sys
 
 from django.utils.translation import ugettext as _, ugettext_lazy as _t
 
+from desktop.conf import default_ssl_validate
 from desktop.lib.conf import Config, coerce_bool, validate_path
+
+LOG = logging.getLogger(__name__)
 
 
 OOZIE_URL = Config(
@@ -43,7 +47,7 @@ REMOTE_DEPLOYMENT_DIR = Config(
 SSL_CERT_CA_VERIFY=Config(
   key="ssl_cert_ca_verify",
   help="In secure mode (HTTPS), if SSL certificates from Oozie Rest APIs have to be verified against certificate authority",
-  default=True,
+  dynamic_default=default_ssl_validate,
   type=coerce_bool)
 
 
@@ -56,7 +60,7 @@ def get_oozie_status(user):
     if not 'test' in sys.argv: # Avoid tests hanging
       status = str(get_oozie(user).get_oozie_status())
   except:
-    pass
+    LOG.exception('failed to get oozie status')
 
   return status
 
@@ -68,6 +72,8 @@ def config_validator(user):
   Called by core check_config() view.
   """
   from hadoop.cluster import get_all_hdfs
+  from hadoop.fs.hadoopfs import Hdfs
+  from liboozie.oozie_api import get_oozie
 
   res = []
 
@@ -76,13 +82,22 @@ def config_validator(user):
     if 'NORMAL' not in status:
       res.append((status, _('The Oozie server is not available')))
 
+    api = get_oozie(user)
+    intrumentation = api.get_instrumentation()
+    sharelib_url = [param['value'] for group in intrumentation['variables'] for param in group['data'] if param['name'] == 'sharelib.system.libpath']
+    if sharelib_url:
+      sharelib_url = Hdfs.urlsplit(sharelib_url[0])[2]
+
+    if not sharelib_url:
+      res.append((status, _('Oozie Share Lib path is not available')))
+
     class ConfigMock:
       def __init__(self, value): self.value = value
       def get(self): return self.value
       def get_fully_qualifying_key(self): return self.value
 
     for cluster in get_all_hdfs().values():
-      res.extend(validate_path(ConfigMock('/user/oozie/share/lib'), is_dir=True, fs=cluster,
+      res.extend(validate_path(ConfigMock(sharelib_url), is_dir=True, fs=cluster,
                                message=_('Oozie Share Lib not installed in default location.')))
 
   return res

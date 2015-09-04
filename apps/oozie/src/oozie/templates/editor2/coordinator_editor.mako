@@ -14,7 +14,7 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
-from desktop.views import commonheader, commonfooter, commonshare
+from desktop.views import commonheader, commonfooter, commonshare, _ko
 from django.utils.translation import ugettext as _
 %>
 
@@ -58,7 +58,7 @@ ${ commonheader(_("Coordinator Editor"), "Oozie", user) | n,unicode }
     </a>
 
     <a class="share-link btn" rel="tooltip" data-placement="bottom" data-bind="click: openShareModal,
-        attr: {'data-original-title': '${ _("Share") } ' + name},
+        attr: {'data-original-title': '${ _ko("Share") } ' + name},
         css: {'isShared': isShared(), 'btn': true},
         visible: coordinator.id() != null && canEdit()">
       <i class="fa fa-users"></i>
@@ -93,7 +93,7 @@ ${ layout.menubar(section='coordinators', is_editor=True, pullright=buttons) }
       <div class="card card-home">
         <h1 class="card-heading simple" style="border-bottom: none"><span data-bind="editable: $root.coordinator.name, editableOptions: {enabled: $root.isEditing(), placement: 'right'}"></span></h1>
         <div class="card-body muted" style="margin-top: 2px" data-bind="visible: $root.isEditing() || (! $root.isEditing() && $root.coordinator.properties.description)">
-          <span data-bind="editable: $root.coordinator.properties.description, editableOptions: {enabled: $root.isEditing(), placement: 'right', emptytext: '${_('Add a description...')}'}"></span>
+          <span data-bind="editable: $root.coordinator.properties.description, editableOptions: {enabled: $root.isEditing(), placement: 'right', emptytext: '${_ko('Add a description...')}'}"></span>
         </div>
       </div>
 
@@ -141,7 +141,8 @@ ${ layout.menubar(section='coordinators', is_editor=True, pullright=buttons) }
                   <label class="control-label">${ _('Crontab') }</label>
                   <div class="controls">
                     <input id="coord-frequency" type="text" data-bind="value: coordinator.properties.cron_frequency" name="cron_frequency"/>
-                    <span class="help-inline"><a data-bind="visible: coordinator.properties.cron_advanced" href="http://quartz-scheduler.org/api/2.2.0/org/quartz/CronExpression.html" target="_blank">
+                    <span class="help-inline">
+                      <a data-bind="visible: coordinator.properties.cron_advanced" href="http://quartz-scheduler.org/api/2.2.0/org/quartz/CronExpression.html" target="_blank">
                       <i class="fa fa-question-circle" title="${ _('Check syntax ?') }"></i></a>
                     </span>
                   </div>
@@ -175,10 +176,16 @@ ${ layout.menubar(section='coordinators', is_editor=True, pullright=buttons) }
                 <label class="control-label">${ _('From') }</label>
                 <div class="controls">
                   <div class="input-prepend input-group">
-                    <span class="add-on input-group-addon"><i class="fa fa-calendar"></i></span><input type="text" class="input-small" data-bind="value: coordinator.properties.startDateUI, datepicker: {}" />
+                    <span class="add-on input-group-addon">
+                      <i class="fa fa-calendar"></i>
+                    </span>
+                    <input type="text" class="input-small" data-bind="value: coordinator.properties.startDateUI, datepicker: {}" />
                   </div>
                   <div class="input-prepend input-group">
-                    <span class="add-on input-group-addon"><i class="fa fa-clock-o"></i></span><input type="text" class="input-mini" data-bind="value: coordinator.properties.startTimeUI, timepicker: {}" />
+                    <span class="add-on input-group-addon">
+                      <i class="fa fa-clock-o"></i>
+                    </span>
+                    <input type="text" class="input-mini" data-bind="value: coordinator.properties.startTimeUI, timepicker: {}" />
                   </div>
                   <span class="help-inline"></span>
                 </div>
@@ -187,10 +194,16 @@ ${ layout.menubar(section='coordinators', is_editor=True, pullright=buttons) }
                 <label class="control-label">${ _('To') }</label>
                 <div class="controls">
                   <div class="input-prepend input-group">
-                    <span class="add-on input-group-addon"><i class="fa fa-calendar"></i></span><input type="text" class="input-small" data-bind="value: coordinator.properties.endDateUI, datepicker: {}" />
+                    <span class="add-on input-group-addon">
+                      <i class="fa fa-calendar"></i>
+                    </span>
+                    <input type="text" class="input-small" data-bind="value: coordinator.properties.endDateUI, datepicker: {}" />
                   </div>
                   <div class="input-prepend input-group">
-                    <span class="add-on input-group-addon"><i class="fa fa-clock-o"></i></span><input type="text" class="input-mini" data-bind="value: coordinator.properties.endTimeUI, timepicker: {}" />
+                    <span class="add-on input-group-addon">
+                      <i class="fa fa-clock-o"></i>
+                    </span>
+                    <input type="text" class="input-mini" data-bind="value: coordinator.properties.endTimeUI, timepicker: {}" />
                   </div>
                   <span class="help-inline"></span>
                 </div>
@@ -198,7 +211,7 @@ ${ layout.menubar(section='coordinators', is_editor=True, pullright=buttons) }
               <div class="control-group" style="margin-bottom: 0">
                 <label class="control-label">${ _('Timezone') }</label>
                 <div class="controls">
-                  <select data-bind="options: $root.availableTimezones, select2: { placeholder: '${ _("Select a Timezone") }', update: coordinator.properties.timezone}" style="width: 180px"></select>
+                  <select data-bind="options: $root.availableTimezones, select2: { placeholder: '${ _ko("Select a Timezone") }', update: coordinator.properties.timezone}" style="width: 180px"></select>
                   <span class="help-inline"></span>
                 </div>
               </div>
@@ -220,7 +233,7 @@ ${ layout.menubar(section='coordinators', is_editor=True, pullright=buttons) }
 
           <ul data-bind="foreach: coordinator.variables, visible: coordinator.variables().length > 0" class="unstyled">
             <li style="margin-bottom: 10px">
-              <select data-bind="options: $parent.coordinator.workflowParameters, optionsText: 'name', optionsValue: 'name', select2: { placeholder: '${ _("Select a parameter") }', update: workflow_variable, type: 'parameter'}, visible: $root.isEditing" style="width: 250px"></select>
+              <select data-bind="options: $parent.coordinator.workflowParameters, optionsText: 'name', optionsValue: 'name', select2: { placeholder: '${ _ko("Select a parameter") }', update: workflow_variable, type: 'parameter'}, visible: $root.isEditing" style="width: 250px"></select>
 
               <div class="pull-left" style="width: 130px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; line-height: 30px;" data-bind="text: workflow_variable, visible: ! $root.isEditing(), attr:{'title': workflow_variable}"></div>
 
@@ -262,8 +275,8 @@ ${ layout.menubar(section='coordinators', is_editor=True, pullright=buttons) }
 
               <span data-bind="visible: $root.isEditing">
                 <input type="text" class="filechooser-input dataset-input" data-bind="value: dataset_variable, filechooser: dataset_variable, attr: { placeholder:
-                  dataset_type() == 'input_path' ? '${ _("Required data path dependency to start the worklow") }' :
-                  dataset_type() == 'output_path' ? '${ _("Data path created by the workflow") }' :
+                  dataset_type() == 'input_path' ? '${ _ko("Required data path dependency to start the worklow") }' :
+                  dataset_type() == 'output_path' ? '${ _ko("Data path created by the workflow") }' :
                   'e.g. 1, 2, 3, /data/logs, ${"$"}{coord:nominalTime()}' },
                   typeahead: { target: dataset_variable, source: datasetTypeaheadSource, triggerOnFocus: true, multipleValues: true, multipleValuesSeparator: '', multipleValuesExtractors: [' ', '/'] }" style="margin-bottom:0; width: 380px" />
               </span>
@@ -284,9 +297,9 @@ ${ layout.menubar(section='coordinators', is_editor=True, pullright=buttons) }
                   <span data-bind="visible: dataset_variable().length == 0">
                     e.g. /data/${'$'}{YEAR}/${'$'}{MONTH}/${'$'}{DAY}
                   </span>
-                  <span data-bind="visible: dataset_variable().length > 0">
+                  <span data-bind="visible: dataset_variable().length > 0 && instance_choice() != 'range'">
                     ${ _('Will convert to') }
-                    <a target="_blank" data-bind="text: convertVariables(dataset_variable()), attr: {'href': '/filebrowser/view' + convertVariables(dataset_variable())}"></a>
+                    <a target="_blank" data-bind="text: convertDatasetVariables(dataset_variable(), same_start(), start(), same_frequency(), frequency_unit(), start_instance(), instance_choice()), attr: {'href': '/filebrowser/view=' + convertDatasetVariables(dataset_variable(), same_start(), start(), same_frequency(), frequency_unit(), start_instance(), instance_choice())}"></a>
                   </span>
                   </a>
                 </span>
@@ -296,23 +309,23 @@ ${ layout.menubar(section='coordinators', is_editor=True, pullright=buttons) }
                     <div class="control-group">
                       <label class="control-label">${ _('Done flag') }</label>
                       <div class="controls">
-                        <input type="checkbox" data-bind="checked: use_done_flag, style: {'margin-top': !use_done_flag() ? '9px' : '-1px'}" />
-                        <input type="text" data-bind="value: done_flag, visible: use_done_flag"/>
+                        <input type="checkbox" data-bind="checked: use_done_flag, style: {'margin-top': !use_done_flag() ? '9px' : '-1px'}, enable: $root.isEditing" />
+                        <input type="text" data-bind="value: done_flag, visible: use_done_flag, enable: $root.isEditing"/>
                       </div>
                     </div>
                     <div class="control-group">
                       <label class="control-label">${ _('Same frequency') }</label>
                       <div class="controls">
-                        <input type="checkbox" data-bind="checked: same_frequency, style: {'margin-top': same_frequency() ? '5px' : '0'}" />
+                        <input type="checkbox" data-bind="checked: same_frequency, style: {'margin-top': same_frequency() ? '5px' : '0'}, enable: $root.isEditing" />
                         <span data-bind="visible: ! same_frequency()">
                           ${ _('Every') }
                         </span>
-                        <select data-bind="value: frequency_number, visible: ! same_frequency()" style="width: 50px">
+                        <select data-bind="value: frequency_number, visible: ! same_frequency(), enable: $root.isEditing" style="width: 50px">
                           % for i in xrange(0, 60):
                           <option value="${ i }">${ i }</option>
                           % endfor
                         </select>
-                        <select data-bind="value: frequency_unit, visible: ! same_frequency()" style="width: 100px">
+                        <select data-bind="value: frequency_unit, visible: ! same_frequency(), enable: $root.isEditing" style="width: 100px">
                           <option value="minutes">${ _('Minutes') }</option>
                           <option value="hours">${ _('Hours') }</option>
                           <option value="days" selected="selected">${ _('Days') }</option>
@@ -323,15 +336,15 @@ ${ layout.menubar(section='coordinators', is_editor=True, pullright=buttons) }
                     <div class="control-group">
                       <label class="control-label">${ _('Same start') }</label>
                       <div class="controls">
-                        <input type="checkbox" data-bind="checked: same_start, style: {'margin-top': same_start() ? '9px' : '-1px'}" />
-                        <input type="text" data-bind="value: start, visible: ! same_start()"/>
+                        <input type="checkbox" data-bind="checked: same_start, style: {'margin-top': same_start() ? '9px' : '-1px'}, enable: $root.isEditing" />
+                        <input type="text" data-bind="value: start, visible: ! same_start(), enable: $root.isEditing"/>
                       </div>
                     </div>
                     <div class="control-group">
                       <label class="control-label">${ _('Same timezone') }</label>
                       <div class="controls">
-                        <input type="checkbox" data-bind="checked: same_timezone, style: {'margin-top': same_timezone() ? '5px' : '0'}" />
-                        <select data-bind="options: $root.availableTimezones, select2: { placeholder: '${ _("Select a Timezone") }', update: timezone}, visible: ! same_timezone()" style="width: 180px"></select>
+                        <input type="checkbox" data-bind="checked: same_timezone, style: {'margin-top': same_timezone() ? '5px' : '0'}, enable: $root.isEditing" />
+                        <select data-bind="options: $root.availableTimezones, select2: { placeholder: '${ _ko("Select a Timezone") }', update: timezone}, visible: ! same_timezone(), enable: $root.isEditing" style="width: 180px"></select>
                       </div>
                     </div>
                     <div class="control-group">
@@ -339,15 +352,15 @@ ${ layout.menubar(section='coordinators', is_editor=True, pullright=buttons) }
                       <div class="controls">
                         <div class="btn-group" data-toggle="buttons-radio">
                           <button id="default-btn" type="button" class="btn"
-                                  data-bind="click: function() { instance_choice('default'); }, css: { active: instance_choice() == 'default' }">
+                                  data-bind="click: function() { instance_choice('default'); }, css: { active: instance_choice() == 'default' }, enable: $root.isEditing">
                             ${ _('Default') }
                           </button>
                           <button id="single-btn" type="button" class="btn"
-                                  data-bind="click: function() { instance_choice('single'); }, css: { active: instance_choice() == 'single' }">
+                                  data-bind="click: function() { instance_choice('single'); }, css: { active: instance_choice() == 'single' }, enable: $root.isEditing">
                             ${ _('Single') }
                           </button>
                           <button id="range-btn" type="button" class="btn"
-                                  data-bind="click: function() { instance_choice('range'); }, css: { active: instance_choice() == 'range' }">
+                                  data-bind="click: function() { instance_choice('range'); }, css: { active: instance_choice() == 'range' }, enable: $root.isEditing">
                             ${ _('Range') }
                           </button>
                         </div>
@@ -356,25 +369,25 @@ ${ layout.menubar(section='coordinators', is_editor=True, pullright=buttons) }
                     <div class="control-group" data-bind="visible: $.inArray(instance_choice(), ['single', 'range']) != -1">
                       <label class="control-label">${ _('Start') }</label>
                       <div class="controls">
-                        <input name="instance_start" type="number" data-bind="value: start_instance, enable: ! is_advanced_start_instance()"/>
+                        <input name="instance_start" type="number" data-bind="value: start_instance, enable: ! is_advanced_start_instance(), enable: $root.isEditing"/>
                         <label style="display: inline">
                             &nbsp;
-                            <input type="checkbox" data-bind="checked: is_advanced_start_instance" style="margin-top:0">
+                            <input type="checkbox" data-bind="checked: is_advanced_start_instance, enable: $root.isEditing" style="margin-top:0">
                             ${ _('(advanced)') }
                           </label>
-                          <input type="text" data-bind="value: advanced_start_instance, visible: is_advanced_start_instance()"/>
+                          <input type="text" data-bind="value: advanced_start_instance, visible: is_advanced_start_instance(), enable: $root.isEditing"/>
                       </div>
                     </div>
                     <div class="control-group" data-bind="visible: instance_choice() == 'range'">
                       <label class="control-label">${ _('End') }</label>
                       <div class="controls">
-                        <input name="instance_end" type="number" data-bind="value: end_instance, enable: ! is_advanced_end_instance()"/>
+                        <input name="instance_end" type="number" data-bind="value: end_instance, enable: ! is_advanced_end_instance(), enable: $root.isEditing"/>
                         <label style="display: inline">
                             &nbsp;
-                            <input type="checkbox" data-bind="checked: is_advanced_end_instance" style="margin-top:0">
+                            <input type="checkbox" data-bind="checked: is_advanced_end_instance, enable: $root.isEditing" style="margin-top:0">
                             ${ _('(advanced)') }
                           </label>
-                          <input type="text" data-bind="value: advanced_end_instance, visible: is_advanced_end_instance()"/>
+                          <input type="text" data-bind="value: advanced_end_instance, visible: is_advanced_end_instance(), enable: $root.isEditing"/>
                       </div>
                     </div>
                   </form>
@@ -404,7 +417,7 @@ ${ layout.menubar(section='coordinators', is_editor=True, pullright=buttons) }
   </div>
 </div>
 
-<div id="chooseWorkflowDemiModal" class="demi-modal hide" data-backdrop="false">
+<div id="chooseWorkflowDemiModal" class="demi-modal fade" data-backdrop="false">
   <div class="modal-body">
     <a href="javascript: void(0)" data-dismiss="modal" class="pull-right"><i class="fa fa-times"></i></a>
     <div style="float: left; margin-right: 10px;text-align: center">
@@ -427,6 +440,7 @@ ${ layout.menubar(section='coordinators', is_editor=True, pullright=buttons) }
       </div>
     </div>
   </div>
+  <div><a class="pointer demi-modal-chevron" data-dismiss="modal"><i class="fa fa-chevron-up"></i></a></div>
 </div>
 
 <div id="settingsModal" class="modal hide fade">
@@ -455,7 +469,7 @@ ${ layout.menubar(section='coordinators', is_editor=True, pullright=buttons) }
       <input data-bind="value: coordinator.properties.timeout" type="number"/>
 
       <h4>${ _('Concurrency') }</h4>
-      <select data-bind="options: availableSettings, optionsCaption: '${ _("Default") }', value: coordinator.properties.concurrency"></select>
+      <select data-bind="options: availableSettings, optionsCaption: '${ _ko("Default") }', value: coordinator.properties.concurrency"></select>
 
       <h4>${ _('Execution') }</h4>
       <select data-bind="value: coordinator.properties.execution">
@@ -465,7 +479,7 @@ ${ layout.menubar(section='coordinators', is_editor=True, pullright=buttons) }
       </select>
 
       <h4>${ _('Throttle') }</h4>
-      <select data-bind="options: availableSettings, optionsCaption: '${ _("Default") }', value: coordinator.properties.throttle"></select>
+      <select data-bind="options: availableSettings, optionsCaption: '${ _ko("Default") }', value: coordinator.properties.throttle"></select>
 
       <h4>${ _('SLA Configuration') }</h4>
       <div class="sla-form" data-bind="with: $root.coordinator.properties">
@@ -522,6 +536,8 @@ ${ dashboard.import_bindings() }
 <script src="${ static('oozie/js/coordinator-editor.ko.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('oozie/js/editor2-utils.js') }" type="text/javascript" charset="utf-8"></script>
 
+<script src="${ static('desktop/ext/js/jquery/plugins/jquery.hotkeys.js') }"></script>
+
 
 <script type="text/javascript">
   ${ utils.slaGlobal() }
@@ -550,13 +566,56 @@ ${ dashboard.import_bindings() }
       })
       .jqCronGetInstance();
 
+  $('#jqCron-container').on('cron:change', function(e, cron){
+    viewModel.coordinator.properties.cron_frequency(cron);
+  });
+
   function zeroPadding(value) {
     return (value < 10 ? '0':'') + value;
   }
 
-  function convertVariables(path) {
+  function convertDatasetVariables(path, hasSameStart, customStart, hasSameFrequency, customFrequencyUnit, startInstance, instanceChoice) {
     var _startDate = moment(viewModel.coordinator.start_date.value()).utc();
-    if (_startDate.isValid()){
+    if (!hasSameStart) {
+      _startDate = moment(customStart).utc();
+    }
+
+    var _startDiffObj = {
+      qty: 0,
+      freq: "minutes"
+    };
+    if (startInstance != 0 && instanceChoice == "single") {
+      _startDiffObj.qty = startInstance;
+      if (hasSameFrequency) {
+        var _freqs = $.trim(viewModel.coordinator.properties.cron_frequency()).split(" ");
+        if (_freqs.length >= 5) {
+          if (_freqs[_freqs.length - 1] == "*") {
+            _startDiffObj.freq = "years";
+          }
+          if (_freqs[_freqs.length - 2] == "*") {
+            _startDiffObj.freq = "months";
+          }
+          if (_freqs[_freqs.length - 3] == "*") {
+            _startDiffObj.freq = "days";
+          }
+          if (_freqs[_freqs.length - 4] == "*") {
+            _startDiffObj.freq = "hours";
+          }
+          if (_freqs[_freqs.length - 5] == "*") {
+            _startDiffObj.freq = "minutes";
+          }
+        }
+        else {
+          _startDiffObj.qty = 0;
+        }
+      }
+      else {
+        _startDiffObj.freq = customFrequencyUnit;
+      }
+    }
+
+    if (_startDate.isValid()) {
+      _startDate = _startDate.add(_startDiffObj.qty, _startDiffObj.freq);
       path = path.replace(/\${'$'}{YEAR}/gi, _startDate.year());
       path = path.replace(/\${'$'}{MONTH}/gi, zeroPadding((_startDate.month() + 1)));
       path = path.replace(/\${'$'}{DAY}/gi, zeroPadding(_startDate.date()));
@@ -597,6 +656,11 @@ ${ dashboard.import_bindings() }
   $(document).ready(function() {
     $("#chooseWorkflowDemiModal").modal({
       show: false
+    });
+    $(window).bind("keydown", "esc", function () {
+      if ($(".demi-modal.fade.in").length > 0) {
+        $(".demi-modal.fade.in .demi-modal-chevron").click();
+      }
     });
   });
 </script>

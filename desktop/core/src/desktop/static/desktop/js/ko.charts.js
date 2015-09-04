@@ -27,7 +27,7 @@ ko.HUE_CHARTS = {
 };
 
 ko.bindingHandlers.pieChart = {
-  update: function (element, valueAccessor) {
+  init: function (element, valueAccessor) {
     var _options = valueAccessor();
     var _data = _options.transformer(_options.data);
     $(element).css("marginLeft", "auto");
@@ -78,6 +78,8 @@ ko.bindingHandlers.pieChart = {
           });
         }
 
+        $(element).data("chart", _chart);
+
         var _resizeTimeout = -1;
         nv.utils.windowResize(function () {
           window.clearTimeout(_resizeTimeout);
@@ -113,24 +115,186 @@ ko.bindingHandlers.pieChart = {
             });
       });
     }
+  },
+  update: function (element, valueAccessor) {
+    var _options = valueAccessor();
+    var _data = _options.transformer(_options.data);
+    var _chart = $(element).data("chart");
+    if (_chart) {
+      var _d3 = d3.select($(element).find("svg")[0]);
+      _d3.datum(_data)
+            .transition().duration(150)
+            .each("end", _options.onComplete != null ? _options.onComplete : void(0))
+            .call(_chart);
+
+      if (_options.fqs) {
+          $.each(_options.fqs(), function (cnt, item) {
+            if (item.id() == _options.data.widget_id && item.field() == _options.field()) {
+              _chart.selectSlices($.map(item.filter(), function (it) {
+                return it.value();
+              }));
+            }
+          });
+        }
+      chartsNormalState();
+    }
+    else if (_data.length > 0) {
+      ko.bindingHandlers.pieChart.init(element, valueAccessor);
+    }
   }
 };
 
 ko.bindingHandlers.barChart = {
-  update: function (element, valueAccessor) {
+  init: function (element, valueAccessor) {
     barChartBuilder(element, valueAccessor(), false);
+  },
+  update: function (element, valueAccessor) {
+    var _options = valueAccessor();
+    var _datum = _options.transformer(_options.datum);
+    var _chart = $(element).data("chart");
+
+    if (_chart) {
+
+      if (_chart.multibar){
+        _chart.multibar.stacked(typeof _options.stacked != "undefined" ? _options.stacked : false);
+      }
+
+      var _d3 = d3.select($(element).find("svg")[0]);
+      _d3.datum(_datum)
+        .transition().duration(150)
+        .each("end", function () {
+          if (_options.onComplete != null) {
+            _options.onComplete();
+          }
+        }).call(_chart);
+
+      if (_chart.selectBars) {
+        var _field = (typeof _options.field == "function") ? _options.field() : _options.field;
+        $.each(_options.fqs(), function (cnt, item) {
+          if (item.id() == _options.datum.widget_id) {
+            if (item.field() == _field) {
+              if (item.properties){
+                _chart.selectBars({
+                  singleValues: $.map(item.filter(), function (it) {
+                    return it.value();
+                  }),
+                  rangeValues: $.map(item.properties(), function (it) {
+                    return {from: it.from(), to: it.to() };
+                  })
+                });
+              }
+              else {
+                _chart.selectBars($.map(item.filter(), function (it) {
+                    return it.value();
+                }));
+              }
+            }
+            if (Array.isArray(item.field())) {
+              _chart.selectBars({
+                field: item.field(),
+                selected: $.map(item.filter(), function (it) {
+                  return { values: it.value() };
+                })
+              });
+            }
+          }
+        });
+      }
+      chartsNormalState();
+    }
+    else if (_datum.length > 0) {
+      ko.bindingHandlers.barChart.init(element, valueAccessor);
+    }
   }
 };
 
 ko.bindingHandlers.timelineChart = {
+  init: function (element, valueAccessor) {
+    if (valueAccessor().type && valueAccessor().type() == "line"){
+      lineChartBuilder(element, valueAccessor(), true);
+      $(element).data("type", "line");
+    }
+    else {
+      barChartBuilder(element, valueAccessor(), true);
+      $(element).data("type", "bar");
+    }
+  },
   update: function (element, valueAccessor) {
-    barChartBuilder(element, valueAccessor(), true);
+    var _options = valueAccessor();
+    if (valueAccessor().type && valueAccessor().type() != $(element).data("type")){
+      if ($(element).find("svg").length > 0) {
+        $(element).find("svg").remove();
+      }
+      if (valueAccessor().type() == "line"){
+        lineChartBuilder(element, valueAccessor(), true);
+      }
+      else {
+        barChartBuilder(element, valueAccessor(), true);
+      }
+      $(element).data("type", valueAccessor().type());
+    }
+    var _datum = _options.transformer(_options.datum);
+    var _chart = $(element).data("chart");
+    if (_chart) {
+      var _d3 = d3.select($(element).find("svg")[0]);
+      _d3.datum(_datum)
+          .transition().duration(150)
+          .each("end", function () {
+            if (_options.onComplete != null) {
+              _options.onComplete();
+            }
+          }).call(_chart);
+      _d3.selectAll("g.nv-x.nv-axis g text").each(function (d){
+        insertLinebreaks(d, this);
+      });
+      _d3.selectAll(".nv-brush").call(_chart.brush().clear());
+      if (_chart.selectBars) {
+        var _field = (typeof _options.field == "function") ? _options.field() : _options.field;
+        $.each(_options.fqs(), function (cnt, item) {
+          if (item.id() == _options.datum.widget_id) {
+            if (item.field() == _field) {
+              _chart.selectBars($.map(item.filter(), function (it) {
+                return it.value();
+              }));
+            }
+            if (Array.isArray(item.field())) {
+              _chart.selectBars({
+                field: item.field(),
+                selected: $.map(item.filter(), function (it) {
+                  return { values: it.value() };
+                })
+              });
+            }
+          }
+        });
+      }
+      chartsNormalState();
+    }
   }
 };
 
 ko.bindingHandlers.lineChart = {
+  init: function (element, valueAccessor) {
+    lineChartBuilder(element, valueAccessor(), false);
+  },
   update: function (element, valueAccessor) {
-    lineChartBuilder(element, valueAccessor());
+    var _options = valueAccessor();
+    var _datum = _options.transformer(_options.datum);
+    var _chart = $(element).data("chart");
+    if (_chart) {
+      var _d3 = d3.select($(element).find("svg")[0]);
+      _d3.datum(_datum)
+        .transition().duration(150)
+        .each("end", function () {
+          if (_options.onComplete != null) {
+            _options.onComplete();
+          }
+        }).call(_chart);
+      chartsNormalState();
+    }
+    else if (_datum.length > 0) {
+      ko.bindingHandlers.lineChart.init(element, valueAccessor);
+    }
   }
 };
 
@@ -139,105 +303,168 @@ ko.bindingHandlers.leafletMapChart = {
     var _options = valueAccessor();
     var _data = _options.transformer(valueAccessor().datum);
 
-    function getMapBounds(lats, lngs) {
-      lats = lats.sort();
-      lngs = lngs.sort();
-      return [
-        [lats[lats.length - 1], lngs[lngs.length - 1]], // north-east
-        [lats[0], lngs[0]] // south-west
-      ]
-    }
-
-    if ($(element).data("map") != null) {
-      try {
-        $(element).data("map").remove();
-      }
-      catch (err) {
-        if (typeof console != "undefined") {
-          console.error(err);
-        }
-      }
-    }
-
-    var _lats = [];
-    _data.forEach(function (item) {
-      if (item.lat != null && $.isNumeric(item.lat)) {
-        _lats.push(item.lat);
-      }
-    });
-    var _lngs = [];
-    _data.forEach(function (item) {
-      if (item.lng != null && $.isNumeric(item.lng)) {
-        _lngs.push(item.lng);
-      }
-    });
-
-    if (_options.height != null) {
-      $(element).height(_options.height * 1);
-    }
-    else {
-      if ($(element).parents(".tab-pane").length > 0) {
-        $(element).height($(element).parents(".tab-pane").height() - 100);
+    function toggleVisibility() {
+      if (((_options.visible != null && _options.visible) || _options.visible == null || typeof _options == "undefined")) {
+        $(element).show();
+        $(element).siblings(".leaflet-nodata").remove();
       }
       else {
-        $(element).height(300);
+        $(element).hide();
+        if ((_options.visible != null && _options.visible) && !_options.isLoading) {
+          $(element).siblings(".leaflet-nodata").remove();
+          $(element).before($("<div>").addClass("leaflet-nodata").css({ "textAlign": "center", "fontSize": "18px", "fontWeight": 700, "marginTop": "20px"}).text("No Data Available."));
+        }
       }
     }
-    if (((_options.visible != null && _options.visible) || _options.visible == null || typeof _options == "undefined") && _data.length > 0) {
-      $(element).show();
+
+    if ($(element).data("mapData") == null || $(element).data("mapData") != ko.toJSON(_data) || _options.forceRedraw) {
+
+      $(element).data("mapData", ko.toJSON(_data));
+
+      var _hasAtLeastOneLat = false;
+      _data.forEach(function (item) {
+        if (item.lat != null && $.isNumeric(item.lat)) {
+          _hasAtLeastOneLat = true;
+        }
+      });
+      var _hasAtLeastOneLng = false;
+      _data.forEach(function (item) {
+        if (item.lng != null && $.isNumeric(item.lng)) {
+          _hasAtLeastOneLng = true;
+        }
+      });
+
+      if (_options.height != null) {
+        $(element).height(_options.height * 1);
+      }
+      else {
+        if ($(element).parents(".tab-pane").length > 0) {
+          $(element).height($(element).parents(".tab-pane").height() - 100);
+        }
+        else {
+          $(element).height(300);
+        }
+      }
+
+      toggleVisibility();
+
+      var _map = null;
+      if (element._map != null) {
+        _map = element._map;
+        _map.removeLayer(element._markerLayer);
+      }
+
+      var _clusterGroup = L.markerClusterGroup({
+        maxClusterRadius: 10,
+        polygonOptions: {
+          weight: 1.5
+        }
+      });
+
+      if (_hasAtLeastOneLat && _hasAtLeastOneLng) {
+        try {
+          if (_map == null) {
+            _map = L.map(element);
+            L.tileLayer("http://{s}.tile.osm.org/{z}/{x}/{y}.png", {
+              attribution: '&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(_map);
+
+            if (L.control.zoomBox) {
+              var _zoomBox = L.control.zoomBox({
+                modal: true
+              });
+              _map.addControl(_zoomBox);
+            }
+
+            if (_options.showMoveCheckbox) {
+              var _command = L.control({
+                position: "topright"
+              });
+
+              _command.onAdd = function (map) {
+                var div = L.DomUtil.create("div", "leaflet-search-command leaflet-bar");
+                div.innerHTML = '<label class="checkbox"><input id="command' + $(element).parents(".card-widget").attr("id") + '" type="checkbox"/> ' + (_options.moveCheckboxLabel ? _options.moveCheckboxLabel : 'Search as I move the map') + '</label>';
+                return div;
+              };
+
+              _command.addTo(_map);
+
+              if (_options.onRegionChange == null) {
+                _options.onRegionChange = function () {
+                };
+              }
+
+              var _onRegionChange = function () {
+              };
+
+              $("#command" + $(element).parents(".card-widget").attr("id")).on("change", function () {
+                if ($(this).is(":checked")) {
+                  if (_options.onRegionChange != null) {
+                    _onRegionChange = _options.onRegionChange;
+                  }
+                }
+                else {
+                  _onRegionChange = function () {
+                  };
+                }
+              });
+
+              _map.on("boxzoomend", function (e) {
+                _onRegionChange(e.boxZoomBounds);
+              });
+              _map.on("dragend", function () {
+                _onRegionChange(_map.getBounds());
+              });
+              _map.on("zoomend", function () {
+                _onRegionChange(_map.getBounds());
+              });
+            }
+
+          }
+          _data.forEach(function (item) {
+            if (item && item.lng != null && item.lat != null) {
+              var _addMarker = false;
+              try {
+                var _latLngObj = L.latLng(item.lat, item.lng);
+                _addMarker = true;
+              }
+              catch (e) {
+                if (typeof console != "undefined") {
+                  console.error(e);
+                }
+              }
+              if (_addMarker) {
+                var _marker = L.marker([item.lat, item.lng]);
+                if (item.label != null) {
+                  _marker.bindPopup($.isArray(item.label) ? item.label.join("") : item.label);
+                }
+                _clusterGroup.addLayer(_marker);
+              }
+            }
+          });
+
+          _map.addLayer(_clusterGroup);
+          if (! $("#command" + $(element).parents(".card-widget").attr("id")).is(":checked")) {
+            _map.fitBounds(_clusterGroup.getBounds());
+          }
+
+          if (_options.onComplete != null) {
+            _options.onComplete();
+          }
+        }
+        catch (err) {
+          $.jHueNotify.error(err.message);
+        }
+      }
+      element._map = _map;
+      element._markerLayer = _clusterGroup;
+      if (_options.onComplete != null) {
+        _options.onComplete();
+      }
     }
     else {
-      $(element).hide();
+      toggleVisibility();
     }
-
-    var _map = null;
-    if (element._map != null) {
-      element._leaflet = false;
-      element._map.remove();
-    }
-
-    if (_lats.length > 0 && _lngs.length > 0) {
-      try {
-
-        if (_map == null) {
-          _map = L.map(element);
-          L.tileLayer("http://{s}.tile.osm.org/{z}/{x}/{y}.png", {
-            attribution: '&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
-          }).addTo(_map);
-        }
-
-        _map.fitBounds(getMapBounds(_lats, _lngs));
-
-        _data.forEach(function (item) {
-          if (item.lng != null && item.lat != null) {
-            var _addMarker = false;
-            try {
-              var _latLngObj = L.latLng(item.lat, item.lng);
-              _addMarker = true;
-            }
-            catch (e) {
-              if (typeof console != "undefined") {
-                console.error(e);
-              }
-            }
-            if (_addMarker) {
-              var _marker = L.marker([item.lat, item.lng]).addTo(_map);
-              if (item.label != null) {
-                _marker.bindPopup(item.label);
-              }
-            }
-          }
-        });
-        if (_options.onComplete != null) {
-          _options.onComplete();
-        }
-      }
-      catch (err) {
-        $.jHueNotify.error(err.message);
-      }
-    }
-    element._map = _map;
-
   }
 };
 
@@ -361,7 +588,7 @@ ko.bindingHandlers.mapChart = {
         var _place = typeof item.label == "String" ? item.label.toUpperCase() : item.label;
         if (_place != null) {
           _mapdata[_place] = {
-            fillKey: "fill_" + (_is2d ? getHighestCategoryValue(cnt, item).idx : (Math.floor(item.value / _chunk) - 1)),
+            fillKey: "fill_" + (_is2d ? getHighestCategoryValue(cnt, item).idx : (Math.ceil(item.value / _chunk) - 1)),
             id: _place,
             cat: item.obj.cat,
             value: item.obj.values ? item.obj.values : item.obj.value,
@@ -478,6 +705,7 @@ ko.bindingHandlers.mapChart = {
     $(element).parents(_parentSelector).one("resize", function () {
       ko.bindingHandlers.mapChart.render(element, valueAccessor);
     });
+    chartsNormalState();
   },
   init: function (element, valueAccessor) {
     ko.bindingHandlers.mapChart.render(element, valueAccessor);
@@ -491,6 +719,9 @@ ko.bindingHandlers.mapChart = {
       else {
         $(element).hide();
       }
+    }
+    else {
+      ko.bindingHandlers.mapChart.render(element, valueAccessor);
     }
 
   }
@@ -547,8 +778,22 @@ ko.bindingHandlers.scatterChart = {
   }
 };
 
+var insertLinebreaks = function (d, ref) {
+  var _el = d3.select(ref);
+  var _mom = moment(d);
+  if (_mom != null && _mom.isValid()) {
+    var _words = _mom.format("HH:mm:ss YYYY-MM-DD").split(" ");
+    _el.text("");
+    for (var i = 0; i < _words.length; i++) {
+      var tspan = _el.append("tspan").text(_words[i]);
+      if (i > 0) {
+        tspan.attr("x", 0).attr("dy", "15");
+      }
+    }
+  }
+};
 
-function lineChartBuilder(element, options) {
+function lineChartBuilder(element, options, isTimeline) {
   var _datum = options.transformer(options.datum);
   $(element).height(300);
   if ($(element).find("svg").length > 0 && (_datum.length == 0 || _datum[0].values.length == 0)) {
@@ -562,6 +807,8 @@ function lineChartBuilder(element, options) {
   if ($(element).is(":visible")) {
     nv.addGraph(function () {
       var _chart = nv.models.lineWithBrushChart();
+      $(element).data("chart", _chart);
+      _chart.transitionDuration(0);
       if (_datum.length > 0 && _datum[0].values.length > 10) {
         _chart.enableSelection();
       }
@@ -570,9 +817,17 @@ function lineChartBuilder(element, options) {
       }
       _chart.onSelectRange(function (from, to) {
         chartsUpdatingState();
-        options.onSelectRange(from, to);
+        options.onSelectRange($.isNumeric(from) ? new Date(moment(from).valueOf()) : from, $.isNumeric(to) ? new Date(moment(to).valueOf()) : to);
       });
       _chart.xAxis.showMaxMin(false);
+      if (isTimeline){
+        _chart.xAxis.tickFormat(function(d) { return d3.time.format("%Y-%m-%d %H:%M:%S")(new Date(d)); })
+        _chart.onChartUpdate(function () {
+          _d3.selectAll("g.nv-x.nv-axis g text").each(function (d){
+            insertLinebreaks(d, this);
+          });
+        });
+      }
 
       _chart.yAxis
           .tickFormat(d3.format(",0f"));
@@ -580,8 +835,16 @@ function lineChartBuilder(element, options) {
       var _d3 = ($(element).find("svg").length > 0) ? d3.select($(element).find("svg")[0]) : d3.select($(element)[0]).append("svg");
       _d3.datum(_datum)
           .transition().duration(150)
-          .each("end", options.onComplete != null ? options.onComplete : void(0))
-          .call(_chart);
+          .each("end", function () {
+            if (options.onComplete != null) {
+              options.onComplete();
+            }
+            if (isTimeline) {
+              _d3.selectAll("g.nv-x.nv-axis g text").each(function (d){
+                insertLinebreaks(d, this);
+              });
+            }
+          }).call(_chart);
 
       var _resizeTimeout = -1;
       nv.utils.windowResize(function () {
@@ -609,7 +872,6 @@ function lineChartBuilder(element, options) {
   }
 }
 
-
 function barChartBuilder(element, options, isTimeline) {
   var _datum = options.transformer(options.datum);
   $(element).height(300);
@@ -629,23 +891,6 @@ function barChartBuilder(element, options, isTimeline) {
   if ($(element).is(":visible")) {
     nv.addGraph(function () {
       var _chart;
-
-
-      var insertLinebreaks = function (d) {
-        var _el = d3.select(this);
-        var _mom = moment(d);
-        if (_mom != null && _mom.isValid()) {
-          var _words = _mom.format("HH:mm:ss YYYY-MM-DD").split(" ");
-          _el.text("");
-          for (var i = 0; i < _words.length; i++) {
-            var tspan = _el.append("tspan").text(_words[i]);
-            if (i > 0) {
-              tspan.attr("x", 0).attr("dy", "15");
-            }
-          }
-        }
-      };
-
       if (isTimeline) {
         if ($(element).find("svg").length > 0 && $(element).find(".nv-discreteBarWithAxes").length > 0) {
           $(element).find("svg").empty();
@@ -663,7 +908,9 @@ function barChartBuilder(element, options, isTimeline) {
         _chart.multibar.stacked(typeof options.stacked != "undefined" ? options.stacked : false);
         _chart.onStateChange(options.onStateChange);
         _chart.onChartUpdate(function () {
-          _d3.selectAll("g.nv-x.nv-axis g text").each(insertLinebreaks);
+          _d3.selectAll("g.nv-x.nv-axis g text").each(function (d){
+            insertLinebreaks(d, this);
+          });
         });
       }
       else {
@@ -727,6 +974,8 @@ function barChartBuilder(element, options, isTimeline) {
       _chart.yAxis
           .tickFormat(d3.format(",0f"));
 
+      $(element).data("chart", _chart);
+
       var _d3 = ($(element).find("svg").length > 0) ? d3.select($(element).find("svg")[0]) : d3.select($(element)[0]).append("svg");
       _d3.datum(_datum)
           .transition().duration(150)
@@ -735,23 +984,26 @@ function barChartBuilder(element, options, isTimeline) {
               options.onComplete();
             }
             if (isTimeline) {
-              _d3.selectAll("g.nv-x.nv-axis g text").each(insertLinebreaks);
+              _d3.selectAll("g.nv-x.nv-axis g text").each(function (d){
+                insertLinebreaks(d, this);
+              });
             }
           }).call(_chart);
 
       if (_chart.selectBars) {
+        var _field = (typeof options.field == "function") ? options.field() : options.field;
         $.each(options.fqs(), function (cnt, item) {
           if (item.id() == options.datum.widget_id) {
-            if (item.field() == options.field) {
+            if (item.field() == _field) {
               _chart.selectBars($.map(item.filter(), function (it) {
                 return it.value();
               }));
             }
-            if (item.field().indexOf(":") > -1) {
+            if (Array.isArray(item.field())) {
               _chart.selectBars({
                 field: item.field(),
                 selected: $.map(item.filter(), function (it) {
-                  return it.value();
+                  return { values: it.value() };
                 })
               });
             }
@@ -786,7 +1038,7 @@ function barChartBuilder(element, options, isTimeline) {
 }
 
 ko.bindingHandlers.partitionChart = {
-  update: function (element, valueAccessor) {
+  render: function (element, valueAccessor) {
 
     var MIN_HEIGHT_FOR_TOOLTIP = 24;
 
@@ -797,6 +1049,10 @@ ko.bindingHandlers.partitionChart = {
         _h = 300,
         _x = d3.scale.linear().range([0, _w]),
         _y = d3.scale.linear().range([0, _h]);
+
+    if ($(element).find("svg").length > 0) {
+      $(element).find("svg").empty();
+    }
 
     var _tip = d3.tip()
         .attr("class", "d3-tip")
@@ -814,7 +1070,9 @@ ko.bindingHandlers.partitionChart = {
         .offset([-12, 0])
 
 
-    var _svg = d3.select(element).append("svg:svg");
+    var _svg = ($(element).find("svg.tip").length > 0) ? d3.select($(element).find("svg.tip")[0]) : d3.select($(element)[0]).append("svg");
+    _svg.attr("class", "tip")
+        .style("height", "0px")
     _svg.call(_tip);
 
 
@@ -822,7 +1080,6 @@ ko.bindingHandlers.partitionChart = {
     _vis.attr("class", "partitionChart")
         .style("width", _w + "px")
         .style("height", _h + "px")
-        .append("svg:svg")
         .attr("width", _w)
         .attr("height", _h);
 
@@ -955,14 +1212,22 @@ ko.bindingHandlers.partitionChart = {
       return "translate(8," + d.dx * _ky / 2 + ")";
     }
 
+  },
+  init: function (element, valueAccessor) {
+    ko.bindingHandlers.partitionChart.render(element, valueAccessor);
+  },
+  update: function (element, valueAccessor) {
+    ko.bindingHandlers.partitionChart.render(element, valueAccessor);
   }
 };
-
 
 function chartsUpdatingState() {
   $(document).find("svg").css("opacity", "0.5");
 }
 
+function chartsNormalState() {
+  $(document).find("svg").css("opacity", "1");
+}
 
 var tipBuilder = function () {
   var direction = d3_tip_direction,

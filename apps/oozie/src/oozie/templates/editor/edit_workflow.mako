@@ -45,7 +45,7 @@ ${ layout.menubar(section='workflows') }
         <li><a href="#properties"><i class="fa fa-cog"></i> ${ _('Properties') }</a></li>
         % if user_can_edit_job:
           <li>
-            <a data-bind="attr: {href: '/filebrowser/view' + fixLeadingSlash(deployment_dir()) }" target="_blank" title="${ _('Go upload additional files and libraries to the deployment directory on HDFS') }" rel="tooltip" data-placement="right"><i class="fa fa-folder-open"></i> ${ _('Workspace') }</a>
+            <a data-bind="attr: {href: '/filebrowser/view=' + fixLeadingSlash(deployment_dir()) }" target="_blank" title="${ _('Go upload additional files and libraries to the deployment directory on HDFS') }" rel="tooltip" data-placement="right"><i class="fa fa-folder-open"></i> ${ _('Workspace') }</a>
           </li>
         % endif
 
@@ -442,8 +442,8 @@ ${ layout.menubar(section='workflows') }
 <script src="${ static('desktop/ext/js/codemirror-xml.js') }"></script>
 <script src="${ static('desktop/ext/js/codemirror-closetag.js') }"></script>
 
-<script src="${ static('desktop/ext/js/knockout-min.js') }" type="text/javascript" charset="utf-8"></script>
-<script src="${ static('desktop/ext/js/knockout.mapping-2.3.2.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/ext/js/knockout.min.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/ext/js/knockout-mapping.min.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/jquery/plugins/jquery-ui-1.10.4.draggable-droppable-sortable.min.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/routie-0.3.0.min.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/datatables-paging-0.1.js') }" type="text/javascript" charset="utf-8"></script>

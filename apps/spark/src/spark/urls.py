@@ -29,19 +29,22 @@ import spark.monkey_patches
 
 # Views
 urlpatterns = patterns('spark.views',
-  url(r'^$', 'editor', name='index'),
-  url(r'^editor$', 'editor', name='editor'),
+  url(r'^$', 'notebook', name='index'),
+  url(r'^notebook$', 'notebook', name='notebook'),
   url(r'^notebooks$', 'notebooks', name='notebooks'),
   url(r'^new$', 'new', name='new'),
   url(r'^download$', 'download', name='download'),
   url(r'^install_examples$', 'install_examples', name='install_examples'),
   url(r'^delete$', 'delete', name='delete'),
   url(r'^copy$', 'copy', name='copy'),
+
+  url(r'^editor$', 'editor', name='editor'),
 )
 
 # APIs
 urlpatterns += patterns('spark.api',
   url(r'^api/create_session$', 'create_session', name='create_session'),
+  url(r'^api/close_session$', 'close_session', name='close_session'),
   url(r'^api/execute$', 'execute', name='execute'),
   url(r'^api/check_status$', 'check_status', name='check_status'),
   url(r'^api/fetch_result_data$', 'fetch_result_data', name='fetch_result_data'),

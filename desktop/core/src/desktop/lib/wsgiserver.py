@@ -827,7 +827,15 @@ if not _fileobject_uses_str_type:
                         buf.write(data)
                         del data  # explicit free
                         break
-                    assert n <= left, "recv(%d) returned %d bytes" % (left, n)
+                    # NOTE: (HUE-2893) This was backported from CherryPy PR
+                    # #14, which fixes uploading chunked files with SSL.
+                    elif n > left:
+                        # Could happen with SSL transport. Differ
+                        # extra data read to the next call
+                        buf.write(data[:left])
+                        self._rbuf.write(data[left:])
+                        del data
+                        break
                     buf.write(data)
                     buf_len += n
                     del data  # explicit free
@@ -1111,8 +1119,6 @@ class SSL_fileobject(CP_fileobject):
                     # The client is talking HTTP to an HTTPS server.
                     raise NoSSLError()
                 raise FatalSSLAlert(*e.args)
-            except:
-                raise
             
             if time.time() - start > self.ssl_timeout:
                 raise socket.timeout("timed out")
@@ -1596,12 +1602,16 @@ class CherryPyWSGIServer(object):
             # AF_UNIX socket
             
             # So we can reuse the socket...
-            try: os.unlink(self.bind_addr)
-            except: pass
+            try:
+              os.unlink(self.bind_addr)
+            except IOError:
+              pass
             
             # So everyone can access the socket...
-            try: os.chmod(self.bind_addr, 0777)
-            except: pass
+            try:
+              os.chmod(self.bind_addr, 0777)
+            except IOError:
+              pass
             
             info = [(socket.AF_UNIX, socket.SOCK_STREAM, 0, "", self.bind_addr)]
         else:
@@ -1670,12 +1680,16 @@ class CherryPyWSGIServer(object):
               ctx.set_passwd_cb(self.ssl_password_cb)
 
             ctx.set_cipher_list(self.ssl_cipher_list)
-            ctx.use_privatekey_file(self.ssl_private_key)
-            ctx.use_certificate_file(self.ssl_certificate)
+            try:
+              ctx.use_privatekey_file(self.ssl_private_key)
+              ctx.use_certificate_file(self.ssl_certificate)
+            except Exception, ex:
+              logging.exception('SSL key and certificate could not be found or have a problem')
+              raise ex
             ctx.set_options(SSL.OP_NO_SSLv2 | SSL.OP_NO_SSLv3)
             self.socket = SSLConnection(ctx, self.socket)
             self.populate_ssl_environ()
-            
+ 
             # If listening on the IPV6 any address ('::' = IN6ADDR_ANY),
             # activate dual-stack. See http://www.cherrypy.org/ticket/871.
             if (not isinstance(self.bind_addr, basestring)

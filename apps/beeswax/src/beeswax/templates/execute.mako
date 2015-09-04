@@ -15,7 +15,7 @@
 ## limitations under the License.
 <%!
   from desktop.lib.django_util import extract_field_data
-  from desktop.views import commonheader, commonfooter, commonshare
+  from desktop.views import commonheader, commonfooter, commonshare, _ko
   from beeswax import conf as beeswax_conf
   from django.utils.translation import ugettext as _
 
@@ -31,12 +31,14 @@ ${layout.menubar(section='query')}
 <div id="temporaryPlaceholder"></div>
 <div id="beeswax-execute">
   <div id="query-editor" class="container-fluid hide section">
-  <div class="row-fluid">
-
-  <div class="span2" id="navigator">
+  <div class="panel-container">
+  <div class="left-panel" id="navigator">
     <ul class="nav nav-tabs" style="margin-bottom: 0">
       <li class="active"><a href="#navigatorTab" data-toggle="tab" class="sidetab">${_('Assist')}</a></li>
       <li><a href="#settingsTab" data-toggle="tab" class="sidetab">${_('Settings')} <span data-bind="visible:design.settings.values().length + design.fileResources.values().length + design.functions.values().length > 0, text: design.settings.values().length + design.fileResources.values().length + design.functions.values().length" class="badge badge-info">12</span></a></li>
+      % if app_name == 'impala':
+      <li><a href="#sessionTab" data-toggle="tab" class="sidetab">${_('Session')}</a></li>
+      % endif
     </ul>
     <div class="tab-content">
       <div class="tab-pane active" id="navigatorTab">
@@ -79,12 +81,12 @@ ${layout.menubar(section='query')}
                       </div>
                       <div data-bind="css: {'error': $root.getSettingKeyErrors($index()).length > 0}" class="control-group">
                         <label>${_('Key')}</label>
-                        <input data-bind="value: key" type="text" class="settingsField span8" autocomplete="off" placeholder="${ 'impala.resultset.cache.size' if app_name == 'impala' else 'mapred.reduce.tasks' }"/>
+                        <input data-bind="value: key" type="text" class="settingsField" autocomplete="off" placeholder="${ 'impala.resultset.cache.size' if app_name == 'impala' else 'mapred.reduce.tasks' }"/>
                       </div>
 
                       <div data-bind="css: {'error': $root.getSettingValueErrors($index()).length > 0}" class="control-group">
                         <label>${_('Value')}</label>
-                        <input data-bind="value: value" type="text" class="settingValuesField span8" placeholder="${ '5000' if app_name == 'impala' else '1' }"/>
+                        <input data-bind="value: value" type="text" class="settingValuesField" placeholder="${ '5000' if app_name == 'impala' else '1' }"/>
                       </div>
                     </div>
                     <!-- /ko -->
@@ -121,7 +123,7 @@ ${layout.menubar(section='query')}
 
                       <div data-bind="css: {'error': $root.getFileResourcePathErrors($index()).length > 0}" class="control-group">
                         <label>${_('Path')}</label>
-                        <input data-bind="value: path" type="text" class="filesField span7 fileChooser" placeholder="/user/foo/udf.jar"/>
+                        <input data-bind="value: path" type="text" class="filesField fileChooser" placeholder="/user/foo/udf.jar"/>
                       </div>
                     </div>
                     <!-- /ko -->
@@ -149,12 +151,12 @@ ${layout.menubar(section='query')}
                       </div>
                       <div data-bind="css: {'error': $root.getFunctionNameErrors($index()).length > 0}" class="control-group">
                         <label>${_('Name')}</label>
-                        <input data-bind="value: name" type="text" class="functionsField span8" autocomplete="off" placeholder="myFunction"/>
+                        <input data-bind="value: name" type="text" class="functionsField" autocomplete="off" placeholder="myFunction"/>
                       </div>
 
                       <div data-bind="css: {'error': $root.getFunctionClassNameErrors($index()).length > 0}" class="control-group">
                         <label>${_('Class name')}</label>
-                        <input data-bind="value: class_name" type="text" class="classNamesField span8" placeholder="com.acme.example"/>
+                        <input data-bind="value: class_name" type="text" class="classNamesField" placeholder="com.acme.example"/>
                       </div>
                     </div>
                     <!-- /ko -->
@@ -200,10 +202,40 @@ ${layout.menubar(section='query')}
           </div>
         </div>
       </div>
+      % if app_name == 'impala':
+      <div class="tab-pane" id="sessionTab">
+        <div class="card card-small card-tab">
+          <div class="card-body">
+            <!-- ko if: $root.fetchingImpalaSession() -->
+            <div style="margin: 5px">
+              <!--[if !IE]><!--><i class="fa fa-spinner fa-spin" style="font-size: 20px; color: #BBB"></i><!--<![endif]-->
+              <!--[if IE]><img src="${ static('desktop/art/spinner.gif') }"/><![endif]-->
+            </div>
+            <!-- /ko -->
+
+            <!-- ko ifnot: $root.fetchingImpalaSession() -->
+              <!-- ko if: $root.impalaSessionLink() != '' -->
+              <ul class="nav nav-list" style="border: none; padding: 0;">
+                <li class="nav-header">${ _('address')}</li>
+              </ul>
+              <div style="margin: 2px">
+              <a data-bind="attr: {'href': $root.impalaSessionLink()}" target="_blank"><span data-bind="text: $root.impalaSessionLink().replace(/^(https?):\/\//, '')"></span> <i class="fa fa-external-link"></i></a>
+              </div>
+              <!-- /ko -->
+              <!-- ko if: $root.impalaSessionLink() == '' -->
+              <div style="margin: 5px">
+                ${ _("There's currently no valid session") }
+              </div>
+              <!-- /ko -->
+            <!-- /ko -->
+          </div>
+        </div>
+      </div>
+      % endif
     </div>
   </div>
-
-  <div id="querySide" class="span10">
+  <div class="resizer" data-bind="splitDraggable : { appName: '${app_name}', onPosition: onPanelPosition }"><div class="resize-bar"><i class="fa fa-ellipsis-v"></i></div></div>
+  <div class="right-panel" id="querySide">
     <div class="alert" data-bind="visible: design.isRedacted">
       ${ _('This query had some sensitive information removed when saved.') }
     </div>
@@ -222,7 +254,7 @@ ${layout.menubar(section='query')}
           % if can_edit_name:
           <h1 class="card-heading simple">
             <a class="share-link" rel="tooltip" data-placement="bottom" style="padding-left:10px; padding-right: 10px" data-bind="click: openShareModal,
-              attr: {'data-original-title': '${ _("Share") } '+name},
+              attr: {'data-original-title': '${ _ko("Share") } '+name},
               css: {'baseShared': true, 'isShared': isShared()}">
               <i class="fa fa-users"></i>
             </a>
@@ -379,7 +411,7 @@ ${layout.menubar(section='query')}
             <table class="table table-striped table-condensed" cellpadding="0" cellspacing="0">
               <tbody data-bind="foreach: $root.design.results.columns">
                 <tr class="columnRow" data-bind="visible: $index() > 0">
-                  <td rel="columntooltip" data-placement="left" data-bind="attr: {title: '${ _("Scroll to the column") }">
+                  <td rel="columntooltip" data-placement="left" data-bind="attr: {title: '${ _ko("Scroll to the column") }">
                     <a href="javascript:void(0)" data-row-selector="true" class="column-selector" data-bind="text: $data.name"></a>
                   </td>
                   <td class="columnType" data-bind="text: $.trim($data.type)"></td>
@@ -483,8 +515,6 @@ ${layout.menubar(section='query')}
       </div>
     </div>
   </div>
-
-
   </div>
   </div>
 
@@ -721,13 +751,59 @@ ${layout.menubar(section='query')}
   </div>
 </div>
 
+
+<div id="tableAnalysis" class="popover mega-popover right">
+  <div class="arrow"></div>
+  <h3 class="popover-title" style="text-align: left">
+    <a class="pull-right pointer close-popover" style="margin-left: 8px"><i class="fa fa-times"></i></a>
+    <a class="pull-right pointer stats-refresh" style="margin-left: 8px"><i class="fa fa-refresh"></i></a>
+    <span class="pull-right stats-warning muted" rel="tooltip" data-placement="top" title="${ _('The column stats for this table are not accurate') }" style="margin-left: 8px"><i class="fa fa-exclamation-triangle"></i></span>
+    <strong class="table-name"></strong> ${ _(' table analysis') }
+  </h3>
+  <div class="popover-content">
+    <div id="tableAnalysisStats">
+      <div class="content"></div>
+    </div>
+  </div>
+</div>
+
+<div id="columnAnalysis" class="popover mega-popover right">
+  <div class="arrow"></div>
+  <h3 class="popover-title" style="text-align: left">
+    <a class="pull-right pointer close-popover" style="margin-left: 8px"><i class="fa fa-times"></i></a>
+    <a class="pull-right pointer stats-refresh" style="margin-left: 8px"><i class="fa fa-refresh"></i></a>
+    <strong class="column-name"></strong> ${ _(' column analysis') }
+  </h3>
+  <div class="popover-content">
+    <div class="pull-right hide filter">
+      <input id="columnAnalysisTermsFilter" type="text" placeholder="${ _('Prefix filter...') }"/>
+    </div>
+    <ul class="nav nav-tabs" role="tablist">
+      <li class="active"><a href="#columnAnalysisStats" role="tab" data-toggle="tab">${ _('Stats') }</a></li>
+      <li><a href="#columnAnalysisTerms" role="tab" data-toggle="tab">${ _('Terms') }</a></li>
+    </ul>
+    <div class="tab-content">
+      <div class="tab-pane active" id="columnAnalysisStats" style="text-align: left">
+        <div class="content"></div>
+      </div>
+      <div class="tab-pane" id="columnAnalysisTerms" style="text-align: left">
+        <div class="alert">${ _('There are no terms to be shown') }</div>
+        <div class="content"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 ${ commonshare() | n,unicode }
 
 <script src="${ static('desktop/js/hue.json.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/jquery/plugins/jquery-ui-1.10.4.draggable-droppable-sortable.min.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/routie-0.3.0.min.js') }" type="text/javascript" charset="utf-8"></script>
-<script src="${ static('desktop/ext/js/knockout-min.js') }" type="text/javascript" charset="utf-8"></script>
-<script src="${ static('desktop/ext/js/knockout.mapping-2.3.2.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/ext/js/knockout.min.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/ext/js/knockout-mapping.min.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/js/ko.hue-bindings.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/js/assistHelper.js') }" type="text/javascript" charset="utf-8"></script>
+<script src="${ static('desktop/js/autocomplete.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('beeswax/js/beeswax.vm.js') }"></script>
 <script src="${ static('desktop/js/share.vm.js') }"></script>
 
@@ -745,9 +821,37 @@ ${ commonshare() | n,unicode }
 <script src="${ static('desktop/ext/js/bootstrap-editable.min.js') }"></script>
 <script src="${ static('desktop/ext/js/moment-with-locales.min.js') }"></script>
 
+<script src="${ static('beeswax/js/stats.utils.js') }"></script>
+
 <style type="text/css">
   h1 {
     margin-bottom: 5px;
+  }
+
+  .panel-container {
+    width: 100%;
+    position: relative;
+  }
+
+  .left-panel {
+    position: absolute;
+  }
+
+  .resizer {
+    position: absolute;
+    width: 20px;
+    text-align: center;
+    z-index: 1000;
+  }
+
+  .resize-bar {
+    top: 50%;
+    position: relative;
+    cursor: ew-resize;
+  }
+
+  .right-panel {
+    position: absolute;
   }
 
   #chooseFile, #chooseFolder, #choosePath {
@@ -796,12 +900,24 @@ ${ commonshare() | n,unicode }
     background-color: #F0F0F0;
   }
 
+  .table-actions {
+    position: absolute;
+    right: 0;
+    padding-left: 3px;
+    background-color: #FFF;
+  }
+
+  .preview-data {
+    margin-right: 5px;
+  }
+
   .remove {
     float: right;
   }
 
   .fileChooserBtn {
     border-radius: 0 3px 3px 0;
+    height: 31px;
   }
 
   .CodeMirror {
@@ -822,13 +938,8 @@ ${ commonshare() | n,unicode }
   }
 
   #navigatorTables {
+    position: relative;
     margin: 4px;
-  }
-
-  #navigatorTables li div {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   #navigatorSearch, #navigatorNoTables {
@@ -964,6 +1075,20 @@ ${ commonshare() | n,unicode }
     color: #DDD;
   }
 
+  .tooltip {
+    z-index: 10001;
+  }
+
+  .filesField, .functionsField, .classNamesField, .settingsField, .settingValuesField {
+    width: 60%;
+  }
+
+  .fileChooser, .folderChooser {
+    border-radius: 3px 0 0 3px !important;
+    border-right: 0 !important;
+  }
+
+
 </style>
 
 <link rel="stylesheet" href="${ static('desktop/ext/css/hue-filetypes.css') }">
@@ -979,6 +1104,12 @@ ${ dashboard.import_charts() }
 
 
 <script type="text/javascript" charset="utf-8">
+
+// avoid blinking of the panels
+var leftPanelWidth = $.totalStorage("${app_name}_left_panel_width") != null ? $.totalStorage("${app_name}_left_panel_width") : 250;
+$(".left-panel").css("width", leftPanelWidth + "px");
+$(".right-panel").css("left", leftPanelWidth + 20 + "px");
+
 var codeMirror, renderNavigator, resetNavigator, resizeNavigator, dataTable, renderRecent, syncWithHive;
 
 var HIVE_AUTOCOMPLETE_BASE_URL = "${ autocomplete_base_url | n,unicode }";
@@ -986,11 +1117,25 @@ var HIVE_AUTOCOMPLETE_FAILS_QUIETLY_ON = [500]; // error codes from beeswax/view
 var HIVE_AUTOCOMPLETE_USER = "${ user }";
 var HIVE_AUTOCOMPLETE_APP = "${app_name}";
 
+var STATS_PROBLEMS = "${ _('There was a problem loading the stats.') }";
+
+var hasBeenResetAfterError = false;
 var HIVE_AUTOCOMPLETE_GLOBAL_CALLBACK = function (data) {
-  if (data != null && data.error && typeof resetNavigator != "undefined") {
+  if (data != null && data.error && typeof resetNavigator != "undefined" && !hasBeenResetAfterError) {
     resetNavigator();
+    hasBeenResetAfterError = true;
   }
 };
+
+var asssitHelper = new AssistHelper({
+    app: HIVE_AUTOCOMPLETE_APP,
+    user: HIVE_AUTOCOMPLETE_USER,
+})
+
+var autocompleter = new Autocompleter({
+  assistHelper: asssitHelper,
+  mode: HIVE_AUTOCOMPLETE_APP
+});
 
 var escapeOutput = function (str) {
   return $('<span>').text(str).html().trim();
@@ -1011,6 +1156,16 @@ var truncateOutput = function (obj) {
   }
   return escapeOutput(type) + suffix;
 };
+
+var reinitTimeout = -1;
+
+function onPanelPosition() {
+  placeResizePanelHandle();
+  window.clearTimeout(reinitTimeout);
+  reinitTimeout = window.setTimeout(function () {
+    reinitializeTableExtenders();
+  }, 50);
+}
 
 function placeResizePanelHandle() {
   // dynamically positioning the resize panel handle since IE doesn't play well with styles.
@@ -1112,10 +1267,6 @@ $(document).ready(function () {
     });
   };
 
-  $(document).on("click", "#recentQueries code", function(){
-    codeMirror.setValue($(this).text());
-  });
-
   renderRecent();
 
   $("#navigatorQuicklook").modal({
@@ -1141,6 +1292,7 @@ $(document).ready(function () {
   });
 
   resizeNavigator = function () {
+    $(".resizer").css("height", ($(window).height() - 150) + "px");
     $("#navigator .card").css("min-height", ($(window).height() - 150) + "px");
     $("#navigatorTables").css("max-height", ($(window).height() - 280) + "px").css("overflow-y", "auto");
   };
@@ -1163,8 +1315,13 @@ $(document).ready(function () {
   };
 
   renderNavigator = function () {
-    $("#navigatorTables").empty();
+    var $navigatorTables = $("#navigatorTables");
+    $navigatorTables.empty();
     $("#navigatorLoader").show();
+
+    $navigatorTables.scroll(function() {
+      $navigatorTables.find(".table-actions").css('right', -$navigatorTables.scrollLeft() + 'px');
+    });
 
     if (! viewModel.database()) {
       $("#navigatorLoader").html("${_('No databases or tables found.')}");
@@ -1175,21 +1332,29 @@ $(document).ready(function () {
         $(data.split(" ")).each(function (cnt, table) {
           if ($.trim(table) != "") {
             var _table = $("<li>");
-            var _metastoreLink = "";
+            var _statsLink = "";
             % if has_metastore:
-              _metastoreLink = "<i class='fa fa-eye' title='" + "${ _('View in Metastore Browser') }" + "'></i>";
+              _statsLink = "<i class='fa fa-bar-chart' title='" + "${ _('View statistics') }" + "'></i>";
             % endif
-            _table.html("<a href='javascript:void(0)' class='pull-right' style='padding-right:5px'><i class='fa fa-list' title='" + "${ _('Preview Sample data') }" + "' style='margin-left:5px'></i></a><a href='/metastore/table/" + viewModel.database() + "/" + table + "' target='_blank' class='pull-right hide'>" + _metastoreLink + "</a><div><a href='javascript:void(0)' title='" + table + "'><i class='fa fa-table'></i> " + table + "</a><ul class='unstyled'></ul></div>");
+            _table.html("<div class='table-actions' style='display:none;'><a href='javascript:void(0)' class='preview-data'><i class='fa fa-list' title='" + "${ _('Preview Sample data') }" + "'></i></a>" +
+            "<a href='javascript:void(0)' class='table-stats'>" + _statsLink + "</a></div>" +
+            "<div><a href='javascript:void(0)' class='show-columns' title='" + table + "'>" + table + "</a><ul class='unstyled' style='overflow-x: auto'></ul></div>");
+
+            var tableActions = _table.find('.table-actions');
+            _table.hover(function () {
+              tableActions.show();
+            }, function () {
+              tableActions.hide();
+            });
 
             _table.data("table", table).attr("id", "navigatorTables_" + table);
-            _table.find("a:eq(2)").on("click", function () {
+            _table.find("a.show-columns").on("click", function () {
               if (_table.find("li").length > 0){
                 _table.find("ul").empty();
               }
               else {
                 _table.find(".fa-table").removeClass("fa-table").addClass("fa-spin").addClass("fa-spinner");
                 hac_getTableColumns(viewModel.database(), table, "", function (plain_columns, extended_columns) {
-                  _table.find("a:eq(1)").removeClass("hide");
                   _table.find("ul").empty();
                   _table.find(".fa-spinner").removeClass("fa-spinner").removeClass("fa-spin").addClass("fa-table");
                   $(extended_columns).each(function (iCnt, col) {
@@ -1212,23 +1377,40 @@ $(document).ready(function () {
                       return escapeOutput(title);
                     };
 
-                    _column.html("<a href='javascript:void(0)' style='padding-left:10px' title='" + getTitle() + "'><i class='fa fa-columns'></i> " + col.name + (col.type != "" ? " (" + truncateOutput({ name: col.name, type: col.type}) + ")" : "") + "</a>");
+                    var _colStatsLink = "";
+                    % if has_metastore:
+                      _colStatsLink = "<i class='fa fa-bar-chart' title='" + "${ _('View statistics') }" + "'></i>";
+                    % endif
+
+                    _column.html("<a href='javascript:void(0)' style='padding-left:10px' title='" + getTitle() + "'>" + col.name + (col.type != "" ? " (" + truncateOutput({ name: col.name, type: col.type}) + ")" : "") + "</a> <a class='pointer col-stats'>" + _colStatsLink + "</a>");
                     _column.appendTo(_table.find("ul"));
                     _column.on("dblclick", function () {
                       codeMirror.replaceSelection($.trim(col.name) + ', ');
                       codeMirror.setSelection(codeMirror.getCursor());
                       codeMirror.focus();
                     });
+                    _column.find("a.col-stats").on("click", function () {
+                      var _link = $(this);
+                      var statsUrl = "/${ app_name }/api/table/" + viewModel.database() + "/" + _table.data("table") + "/stats/" + col.name;
+                      var refreshUrl = "/${ app_name }/api/analyze/" + viewModel.database() + "/" + _table.data("table") + "/" + col.name;
+                      var termsUrl = "/${ app_name }/api/table/" + viewModel.database() + "/" + _table.data("table") + "/terms/" + col.name + "/";
+                      $("#columnAnalysisStats .content").html("<i class='fa fa-spinner fa-spin'></i>");
+                      $("#columnAnalysisTerms .content").html("<i class='fa fa-spinner fa-spin'></i>");
+                      $("#columnAnalysis").show().css("top", _link.offset().top - $("#columnAnalysis").outerHeight() / 2 + _link.outerHeight() / 2).css("left", _link.offset().left + _link.outerWidth());
+                      showColumnStats(statsUrl, refreshUrl, termsUrl, col.name, STATS_PROBLEMS, function () {
+                        $("#columnAnalysis").show().css("top", _link.offset().top - $("#columnAnalysis").outerHeight() / 2 + _link.outerHeight() / 2).css("left", _link.offset().left + _link.outerWidth());
+                      });
+                    });
                   });
                 });
               }
             });
-            _table.find("a:eq(2)").on("dblclick", function () {
+            _table.find("a.table-link").on("dblclick", function () {
               codeMirror.replaceSelection($.trim(table) + ' ');
               codeMirror.setSelection(codeMirror.getCursor());
               codeMirror.focus();
             });
-            _table.find("a:eq(0)").on("click", function () {
+            _table.find("a.preview-data").on("click", function () {
               var tableUrl = "/${ app_name }/api/table/" + viewModel.database() + "/" + _table.data("table");
               $("#navigatorQuicklook").find(".tableName").text(table);
               $("#navigatorQuicklook").find(".tableLink").attr("href", "/metastore/table/" + viewModel.database() + "/" + table);
@@ -1255,6 +1437,17 @@ $(document).ready(function () {
               });
               $("#navigatorQuicklook").modal("show");
             });
+
+            _table.find("a.table-stats").on("click", function () {
+              var _link = $(this);
+              var statsUrl = "/${ app_name }/api/table/" + viewModel.database() + "/" + _table.data("table") + "/stats/";
+              var refreshUrl = "/${ app_name }/api/analyze/" + viewModel.database() + "/" + _table.data("table") + "/";
+              $("#tableAnalysisStats .content").html("<i class='fa fa-spinner fa-spin'></i>");
+              $("#tableAnalysis").show().css("top", _link.offset().top - $("#tableAnalysis").outerHeight()/2 + _link.outerHeight()/2).css("left", _link.offset().left + _link.outerWidth());
+              showTableStats(statsUrl, refreshUrl, _table.data("table"), STATS_PROBLEMS, function(){
+                $("#tableAnalysis").show().css("top", _link.offset().top - $("#tableAnalysis").outerHeight()/2 + _link.outerHeight()/2).css("left", _link.offset().left + _link.outerWidth());
+              });
+            });
             _table.appendTo($("#navigatorTables"));
           }
         });
@@ -1272,6 +1465,7 @@ $(document).ready(function () {
   };
 
   $("#expandResults").on("click", function(){
+    $("#resultTablejHueTableExtenderClonedContainer").remove();
     if ($(this).find("i").hasClass("fa-expand")){
       $(this).find("i").removeClass("fa-expand").addClass("fa-compress");
       $(this).parent().parent().addClass("fullscreen");
@@ -1344,6 +1538,14 @@ $(document).ready(function () {
     $("a[href='#results']").click();
   });
 
+  $(document).on("click", "#tableAnalysis .close-popover", function () {
+    $("#tableAnalysis").hide();
+  });
+
+  $(document).on("click", "#columnAnalysis .close-popover", function () {
+    $("#columnAnalysis").hide();
+  });
+
   $(document).on("shown", "a[data-toggle='tab']:not(.sidetab)", function (e) {
     if ($(e.target).attr("href") == "#log") {
       logsAtEnd = true;
@@ -1372,6 +1574,12 @@ $(document).ready(function () {
       }
     } else {
       reinitializeTable();
+    }
+    if ($(e.target).attr("href") == "#columnAnalysisTerms") {
+      $("#columnAnalysis .filter").removeClass("hide");
+    }
+    if ($(e.target).attr("href") == "#columnAnalysisStats") {
+      $("#columnAnalysis .filter").addClass("hide");
     }
     return e;
   });
@@ -1480,6 +1688,7 @@ $(document).ready(function () {
 
   $(document).on("error.autocomplete", function(){
     $(".CodeMirror-spinner").remove();
+    $("#navigatorLoader").hide();
   });
 
   function splitStatements(hql) {
@@ -1541,102 +1750,38 @@ $(document).ready(function () {
     }
     $(".CodeMirror-spinner").css("top", pos.top + "px").css("left", (pos.left - 4) + "px").show();
 
-    if ($.totalStorage(hac_getTotalStorageUserPrefix() + 'tables_' + viewModel.database()) == null) {
+    var _statementAtCursor = getStatementAtCursor();
+    var _before = _statementAtCursor.statement.substr(0, _statementAtCursor.relativeIndex).replace(/;+$/, "");
+    var _after = _statementAtCursor.statement.substr(_statementAtCursor.relativeIndex).replace(/;+$/, "");
+
+    autocompleter.autocomplete(_before, _after, function(suggestions) {
+      CodeMirror.possibleSoloField = suggestions.length > 0;
+      CodeMirror.tableFieldMagic = false;
+      CodeMirror.fromDot = _before.match(/.*\.[^ ]*$/) != null;
+      var isTable = false;
+
+      var values = suggestions.map(function(suggestion) {
+        if (suggestion.meta === "table") {
+          isTable = true; // They're all tables.
+          var match = suggestion.value.match(/(\? )?f?r?o?m? ?([^ ]+)$/i);
+          if (typeof match[1] !== "undefined") {
+            CodeMirror.tableFieldMagic = true;
+          }
+          return match[2];
+        } else {
+          return CodeMirror.fromDot ? "." + suggestion.value : suggestion.value;
+        }
+      }).join(' ');
+
+      if (isTable) {
+        CodeMirror.possibleTable = !CodeMirror.tableFieldMagic;
+        CodeMirror.catalogTables = values;
+      } else {
+        CodeMirror.catalogFields = values;
+      }
       CodeMirror.showHint(cm, AUTOCOMPLETE_SET);
-      hac_getTables(viewModel.database(), function () {
-      }); // if preload didn't work, tries again
-    }
-    else {
-      hac_getTables(viewModel.database(), function (tables) {
-        CodeMirror.catalogTables = tables;
-        var _statementAtCursor = getStatementAtCursor();
-        var _before = _statementAtCursor.statement.substr(0, _statementAtCursor.relativeIndex).replace(/;+$/, "");
-        var _after = _statementAtCursor.statement.substr(_statementAtCursor.relativeIndex).replace(/;+$/, "");
-        if ($.trim(_before).substr(-1) == ".") {
-          var _statement = _statementAtCursor.statement;
-          var _line = codeMirror.getLine(codeMirror.getCursor().line);
-          var _partial = _line.substring(0, codeMirror.getCursor().ch);
-          var _table = _partial.substring(_partial.lastIndexOf(" ") + 1, _partial.length - 1);
-          if (_statement.indexOf("FROM") > -1) {
-            hac_getTableColumns(viewModel.database(), _table, _statement, function (columns) {
-              var _cols = columns.split(" ");
-              for (var col in _cols) {
-                _cols[col] = "." + _cols[col];
-              }
-              CodeMirror.catalogFields = _cols.join(" ");
-              CodeMirror.showHint(cm, AUTOCOMPLETE_SET);
-            });
-          }
-        }
-        else {
-          CodeMirror.possibleTable = false;
-          CodeMirror.tableFieldMagic = false;
-          if ((_before.toUpperCase().indexOf(" FROM ") > -1 || _before.toUpperCase().indexOf(" TABLE ") > -1 || _before.toUpperCase().indexOf(" STATS ") > -1) && _before.toUpperCase().indexOf(" ON ") == -1 && _before.toUpperCase().indexOf(" ORDER BY ") == -1 && _before.toUpperCase().indexOf(" WHERE ") == -1 ||
-              _before.toUpperCase().indexOf("REFRESH") > -1 || _before.toUpperCase().indexOf("METADATA") > -1 || _before.toUpperCase().indexOf("DESCRIBE") > -1) {
-            CodeMirror.possibleTable = true;
-          }
-          CodeMirror.possibleSoloField = false;
-          if (_before.toUpperCase().indexOf("SELECT ") > -1 && _before.toUpperCase().indexOf(" FROM ") == -1 && !CodeMirror.fromDot) {
-            if (_after.toUpperCase().indexOf("FROM ") > -1 || $.trim(_before).substr(-1) == "(") {
-              fieldsAutocomplete(cm);
-            }
-            else {
-              CodeMirror.tableFieldMagic = true;
-              CodeMirror.showHint(cm, AUTOCOMPLETE_SET);
-            }
-          }
-          else {
-            if ((_before.toUpperCase().indexOf("WHERE ") > -1 || _before.toUpperCase().indexOf("ORDER BY ") > -1) && !CodeMirror.fromDot && _before.toUpperCase().match(/ ON| LIMIT| GROUP| SORT/) == null) {
-              fieldsAutocomplete(cm);
-            }
-            else {
-              CodeMirror.showHint(cm, AUTOCOMPLETE_SET);
-            }
-          }
-        }
-      });
-    }
+    });
   };
-
-  function fieldsAutocomplete(cm) {
-    CodeMirror.possibleSoloField = true;
-    try {
-      var _value = getStatementAtCursor().statement;
-      var _from = _value.toUpperCase().indexOf("FROM");
-      if (_from > -1) {
-        var _match = _value.toUpperCase().substring(_from).match(/ ON| LIMIT| WHERE| GROUP| SORT| ORDER BY|;/);
-        var _to = _value.length;
-        if (_match) {
-          _to = _match.index;
-        }
-        var _found = _value.substr(_from, _to).replace(/(\r\n|\n|\r)/gm, "").replace(/from/gi, "").replace(/join/gi, ",").split(",");
-      }
-
-      var _foundTable = "";
-      for (var i = 0; i < _found.length; i++) {
-        if ($.trim(_found[i]) != "" && _foundTable == "") {
-          _foundTable = $.trim(_found[i]).split(" ")[0];
-        }
-      }
-      if (_foundTable != "") {
-        if (hac_tableHasAlias(_foundTable, _value)) {
-          CodeMirror.possibleSoloField = false;
-          CodeMirror.showHint(cm, AUTOCOMPLETE_SET);
-        }
-        else {
-          hac_getTableColumns(viewModel.database(), _foundTable, _value,
-              function (columns) {
-                CodeMirror.catalogFields = columns;
-                CodeMirror.showHint(cm, AUTOCOMPLETE_SET);
-              });
-        }
-      }
-    }
-    catch (e) {
-    }
-  }
-
-  CodeMirror.fromDot = false;
 
   codeMirror = CodeMirror(function (elt) {
     queryEditor.parentNode.replaceChild(elt, queryEditor);
@@ -1651,7 +1796,6 @@ $(document).ready(function () {
     % endif
     extraKeys: {
       "Ctrl-Space": function () {
-        CodeMirror.fromDot = false;
         codeMirror.execCommand("autocomplete");
       },
       Tab: function (cm) {
@@ -1662,21 +1806,10 @@ $(document).ready(function () {
       if (s.type == "keyup") {
         if (s.keyCode == 190) {
           var _statement = getStatementAtCursor().statement;
-          var _line = codeMirror.getLine(codeMirror.getCursor().line);
-          var _partial = _line.substring(0, codeMirror.getCursor().ch);
-          var _table = _partial.substring(_partial.lastIndexOf(" ") + 1, _partial.length - 1);
-          if (_statement.indexOf("FROM") > -1) {
-            hac_getTableColumns(viewModel.database(), _table, _statement, function (columns) {
-              var _cols = columns.split(" ");
-              for (var col in _cols) {
-                _cols[col] = "." + _cols[col];
-              }
-              CodeMirror.catalogFields = _cols.join(" ");
-              CodeMirror.fromDot = true;
-              window.setTimeout(function () {
-                codeMirror.execCommand("autocomplete");
-              }, 100);  // timeout for IE8
-            });
+          if (_statement.toUpperCase().indexOf("FROM") > -1) {
+            window.setTimeout(function () {
+              codeMirror.execCommand("autocomplete");
+            }, 100);  // timeout for IE8
           }
         }
       }
@@ -1708,6 +1841,12 @@ $(document).ready(function () {
       CURRENT_CODEMIRROR_SIZE = 270;
       codeMirror.setSize("99%", CURRENT_CODEMIRROR_SIZE);
       reinitializeTableExtenders();
+    }
+  });
+
+  $("#download-excel").click(function () {
+    if (viewModel.design.results.columns().length > 255) {
+      $.jHueNotify.warn("${ _('Results exceeds maximum number of columns permitted by Excel, will truncate results to 255 columns.') }")
     }
   });
 
@@ -1899,6 +2038,13 @@ $(document).ready(function () {
   $("a[href='#log']").on("shown", function () {
     resizeLogs();
   });
+
+  % if app_name == 'impala':
+  $("a[href='#sessionTab']").on("shown", function () {
+    // get the impala session info
+    viewModel.fetchImpalaSession();
+  });
+  % endif
 
   $(".blueprintSelect").on("change", function () {
     generateGraph(getGraphType())
@@ -2132,9 +2278,12 @@ $(document).on('error.query', function () {
     var firstPos = err.toLowerCase().indexOf("line");
     if (firstPos > -1) {
       selectedLine = $.trim(err.substring(err.indexOf(" ", firstPos), err.indexOf(":", firstPos))) * 1;
+      if (codeMirror.getSelection()) {
+        selectedLine += codeMirror.getCursor(true).line;
+      }
       errorWidgets.push(
         codeMirror.addLineWidget(
-          selectedLine - 1,
+          selectedLine > 0 ? selectedLine - 1 : selectedLine,
           $("<div>").addClass("editorError").html("<i class='fa fa-exclamation-circle'></i> " + err)[0], {
             coverGutter: true,
             noHScroll: true
@@ -2280,25 +2429,16 @@ function createNewQuery() {
   location.href="${ url(app_name + ':execute_query') }";
 }
 
-function checkLastDatabase(server, database) {
-  var key = "hueBeeswaxLastDatabase-" + server;
-  if (database != $.totalStorage(key)) {
-    $.totalStorage(key, database);
-  }
-}
-
-function getLastDatabase(server) {
-  var key = "hueBeeswaxLastDatabase-" + server;
-  return $.totalStorage(key);
-}
-
-
 // Server error handling.
 $(document).on('server.error', function (e, data) {
   $(document).trigger('error', "${_('Server error occurred: ')}" + data.message ? data.message : data.error);
 });
 $(document).on('server.unmanageable_error', function (e, responseText) {
-  $(document).trigger('error', "${_('Unmanageable server error occurred: ')}" + responseText);
+  var message = responseText;
+  if (! message) {
+    message = '${ _("Hue server is probably down.") }';
+  }
+  $(document).trigger('error', "${_('Unmanageable server error occurred: ')}" + message);
 });
 
 // Other
@@ -2354,7 +2494,6 @@ $(document).ready(function () {
     });
   });
 
-  // Help.
   $("#help").popover({
     'title': "${_('Did you know?')}",
     'content': $("#help-content").html(),
@@ -2477,9 +2616,6 @@ $(document).ready(function () {
     $('#queryContainer').show();
     $('#resizePanel').show();
     $('a[href="#query"]').parent().show();
-    if (!$('#querySide').hasClass('span10')) {
-      $('#querySide').addClass('span10');
-    }
   }
 
   function watchPageComponents() {
@@ -2489,9 +2625,6 @@ $(document).ready(function () {
     $('#resizePanel').hide();
     $('a[href="#query"]').parent().hide();
     $('a[href="#recentTab"]').parent().hide();
-    if ($('#querySide').hasClass('span10')) {
-      $('#querySide').removeClass('span10');
-    }
   }
 
   function queryPage() {
@@ -2681,7 +2814,12 @@ function getDatabases(callback){
         viewModel.database($.totalStorage(hac_getTotalStorageUserPrefix() + "${app_name}_last_database"));
       }
       else {
-        $.totalStorage(hac_getTotalStorageUserPrefix() + "${app_name}_last_database", null);
+        if ($.inArray("default", viewModel.databases()) > -1){
+          viewModel.database("default");
+        }
+        else {
+          $.totalStorage(hac_getTotalStorageUserPrefix() + "${app_name}_last_database", null);
+        }
       }
       var _waitForNavigatorInit = -1;
       _waitForNavigatorInit = window.setInterval(function () {
@@ -2825,12 +2963,12 @@ function pieChartDataTransformer(data) {
 
   if (viewModel.chartSorting() == "asc"){
     _data.sort(function(a, b){
-      return a.value > b.value
+      return a.value - b.value
     });
   }
   if (viewModel.chartSorting() == "desc"){
     _data.sort(function(a, b){
-      return b.value > a.value
+      return b.value - a.value
     });
   }
 
@@ -2867,12 +3005,12 @@ function barChartDataTransformer(rawDatum) {
 
   if (viewModel.chartSorting() == "asc"){
     _data.sort(function(a, b){
-      return a.y > b.y
+      return a.y - b.y
     });
   }
   if (viewModel.chartSorting() == "desc"){
     _data.sort(function(a, b){
-      return b.y > a.y
+      return b.y - a.y
     });
   }
 
@@ -2908,12 +3046,12 @@ function lineChartDataTransformer(rawDatum) {
 
     if (viewModel.chartSorting() == "asc"){
       _data.sort(function(a, b){
-        return a.y > b.y
+        return a.y - b.y
       });
     }
     if (viewModel.chartSorting() == "desc"){
       _data.sort(function(a, b){
-        return b.y > a.y
+        return b.y - a.y
       });
     }
 

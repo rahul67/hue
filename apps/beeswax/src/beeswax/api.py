@@ -15,8 +15,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import logging
+import json
 import re
 
 from django.contrib.auth.models import User
@@ -29,7 +29,8 @@ from desktop.context_processors import get_app_name
 from desktop.lib.django_util import JsonResponse
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.lib.i18n import force_unicode
-from jobsub.parameterization import substitute_variables
+from desktop.lib.parameterization import substitute_variables
+from metastore import parser
 
 import beeswax.models
 
@@ -38,11 +39,11 @@ from beeswax.data_export import upload
 from beeswax.design import HQLdesign
 from beeswax.conf import USE_GET_LOG_API
 from beeswax.server import dbms
-from beeswax.server.dbms import expand_exception, get_query_server_config, QueryServerException
+from beeswax.server.dbms import expand_exception, get_query_server_config, QueryServerException, QueryServerTimeoutException
 from beeswax.views import authorized_get_design, authorized_get_query_history, make_parameterization_form,\
-                          safe_get_design, save_design, massage_columns_for_json, _get_query_handle_and_state,\
+                          safe_get_design, save_design, massage_columns_for_json, _get_query_handle_and_state, \
                           _parse_out_hadoop_jobs
-
+from beeswax.models import Session
 
 LOG = logging.getLogger(__name__)
 
@@ -54,6 +55,8 @@ def error_handler(view_fn):
     except Http404, e:
       raise e
     except Exception, e:
+      LOG.exception('error in %s' % view_fn)
+
       if not hasattr(e, 'message') or not e.message:
         message = str(e)
       else:
@@ -74,13 +77,12 @@ def error_handler(view_fn):
       if re.search('database is locked|Invalid query handle|not JSON serializable', message, re.IGNORECASE):
         response['status'] = 2 # Frontend will not display this type of error
         LOG.warn('error_handler silencing the exception: %s' % e)
-
       return JsonResponse(response)
   return decorator
 
 
 @error_handler
-def autocomplete(request, database=None, table=None):
+def autocomplete(request, database=None, table=None, column=None, nested=None):
   app_name = get_app_name(request)
   query_server = get_query_server_config(app_name)
   do_as = request.user
@@ -94,16 +96,25 @@ def autocomplete(request, database=None, table=None):
       response['databases'] = db.get_databases()
     elif table is None:
       response['tables'] = db.get_tables(database=database)
-    else:
+    elif column is None:
       t = db.get_table(database, table)
       response['hdfs_link'] = t.hdfs_link
       response['columns'] = [column.name for column in t.cols]
       response['extended_columns'] = massage_columns_for_json(t.cols)
-  except TTransportException, tx:
+    else:
+      col = db.get_column(database, table, column)
+      if col:
+        parse_tree = parser.parse_column(col.name, col.type, col.comment)
+        if nested:
+          parse_tree = _extract_nested_type(parse_tree, nested)
+        response = parse_tree
+      else:
+        raise Exception('Could not find column `%s`.`%s`.`%s`' % (database, table, column))
+  except (QueryServerTimeoutException, TTransportException), e:
     response['code'] = 503
-    response['error'] = tx.message
+    response['error'] = e.message
   except Exception, e:
-    LOG.warn('Autocomplete data fetching error %s.%s: %s' % (database, table, e))
+    LOG.warn('Autocomplete data fetching error: %s' % e)
     response['code'] = 500
     response['error'] = e.message
 
@@ -135,6 +146,7 @@ def parameters(request, design_id=None):
 def execute_directly(request, query, design, query_server, tablename=None, **kwargs):
   if design is not None:
     design = authorized_get_design(request, design.id)
+  parameters = kwargs.pop('parameters', None)
 
   db = dbms.get(request.user, query_server)
   database = query.query.get('database', 'default')
@@ -142,6 +154,10 @@ def execute_directly(request, query, design, query_server, tablename=None, **kwa
 
   history_obj = db.execute_query(query, design)
   watch_url = reverse(get_app_name(request) + ':api_watch_query_refresh_json', kwargs={'id': history_obj.id})
+
+  if parameters is not None:
+    history_obj.update_extra('parameters', parameters)
+    history_obj.save()
 
   response = {
     'status': 0,
@@ -283,7 +299,8 @@ def execute(request, design_id=None):
           parameterization_form = parameterization_form_cls(request.REQUEST, prefix="parameterization")
 
           if parameterization_form.is_valid():
-            real_query = substitute_variables(query_str, parameterization_form.cleaned_data)
+            parameters = parameterization_form.cleaned_data
+            real_query = substitute_variables(query_str, parameters)
             query = HQLdesign(query_form, query_type=query_type)
             query._data_dict['query']['query'] = real_query
 
@@ -291,7 +308,7 @@ def execute(request, design_id=None):
               if explain:
                 return explain_directly(request, query, design, query_server)
               else:
-                return execute_directly(request, query, design, query_server)
+                return execute_directly(request, query, design, query_server, parameters=parameters)
 
             except Exception, ex:
               db = dbms.get(request.user, query_server)
@@ -390,7 +407,7 @@ def cancel_query(request, query_history_id):
       query_history = authorized_get_query_history(request, query_history_id, must_exist=True)
       db = dbms.get(request.user, query_history.get_query_server_config())
       db.cancel_operation(query_history.get_handle())
-      _get_query_handle_and_state(query_history)
+      query_history.set_to_expired()
       response['status'] = 0
     except Exception, e:
       response['message'] = unicode(e)
@@ -433,7 +450,7 @@ def save_results_hdfs_directory(request, query_history_id):
         response['id'] = query_history.id
         response['query'] = query_history.query
         response['path'] = target_dir
-        response['success_url'] = '/filebrowser/view%s' % target_dir
+        response['success_url'] = '/filebrowser/view=%s' % target_dir
         query_history = db.insert_query_into_directory(query_history, target_dir)
         response['watch_url'] = reverse(get_app_name(request) + ':api_watch_query_refresh_json', kwargs={'id': query_history.id})
       except Exception, ex:
@@ -500,7 +517,7 @@ def save_results_hdfs_file(request, query_history_id):
         response['id'] = query_history.id
         response['query'] = query_history.query
         response['path'] = target_file
-        response['success_url'] = '/filebrowser/view%s' % target_file
+        response['success_url'] = '/filebrowser/view=%s' % target_file
         response['watch_url'] = reverse(get_app_name(request) + ':api_watch_query_refresh_json', kwargs={'id': query_history.id})
       except Exception, ex:
         error_msg, log = expand_exception(ex, db)
@@ -614,10 +631,13 @@ def describe_table(request, database, table):
 
 
 def get_query_form(request):
-  # Get database choices
-  query_server = dbms.get_query_server_config(get_app_name(request))
-  db = dbms.get(request.user, query_server)
-  databases = [(database, database) for database in db.get_databases()]
+  try:
+    # Get database choices
+    query_server = dbms.get_query_server_config(get_app_name(request))
+    db = dbms.get(request.user, query_server)
+    databases = [(database, database) for database in db.get_databases()]
+  except Exception, e:
+    raise PopupException(_('Unable to access databases, Query Server or Metastore may be down.'), detail=e)
 
   if not databases:
     raise RuntimeError(_("No databases are available. Permissions could be missing."))
@@ -627,3 +647,97 @@ def get_query_form(request):
   query_form.query.fields['database'].choices = databases # Could not do it in the form
 
   return query_form
+
+
+@error_handler
+def analyze_table(request, database, table, columns=None):
+  app_name = get_app_name(request)
+  query_server = get_query_server_config(app_name)
+  db = dbms.get(request.user, query_server)
+
+  response = {'status': -1, 'message': '', 'redirect': ''}
+
+  if request.method == "POST":
+    if columns is not None:
+      query_history = db.analyze_table(database, table)
+    else:
+      query_history = db.analyze_table_columns(database, table)
+
+    response['watch_url'] = reverse('beeswax:api_watch_query_refresh_json', kwargs={'id': query_history.id})
+    response['status'] = 0
+  else:
+    response['message'] = _('A POST request is required.')
+
+  return JsonResponse(response)
+
+
+@error_handler
+def get_table_stats(request, database, table, column=None):
+  app_name = get_app_name(request)
+  query_server = get_query_server_config(app_name)
+  db = dbms.get(request.user, query_server)
+
+  response = {'status': -1, 'message': '', 'redirect': ''}
+
+  if column is not None:
+    stats = db.get_table_columns_stats(database, table, column)
+  else:
+    table = db.get_table(database, table)
+    stats = table.stats
+
+  response['stats'] = stats
+  response['status'] = 0
+
+  return JsonResponse(response)
+
+
+@error_handler
+def get_top_terms(request, database, table, column, prefix=None):
+  app_name = get_app_name(request)
+  query_server = get_query_server_config(app_name)
+  db = dbms.get(request.user, query_server)
+
+  response = {'status': -1, 'message': '', 'redirect': ''}
+
+  terms = db.get_top_terms(database, table, column, prefix=prefix, limit=int(request.GET.get('limit', 30)))
+
+  response['terms'] = terms
+  response['status'] = 0
+
+  return JsonResponse(response)
+
+
+def get_session(request):
+  app_name = get_app_name(request)
+  query_server = get_query_server_config(app_name)
+
+  session = Session.objects.get_session(request.user, query_server['server_name'])
+
+  if session:
+    properties = json.loads(session.properties)
+  else:
+    properties = {}
+
+  return JsonResponse({'properties': properties})
+
+
+"""
+Utils
+"""
+def _extract_nested_type(parse_tree, nested_path):
+  nested_tokens = nested_path.strip('/').split('/')
+
+  subtree = parse_tree
+
+  for token in nested_tokens:
+    if token in subtree:
+      subtree = subtree[token]
+    elif 'fields' in subtree:
+      for field in subtree['fields']:
+        if field['name'] == token:
+          subtree = field
+          break
+    else:
+      raise Exception('Invalid nested type path: %s' % nested_path)
+
+  return subtree
